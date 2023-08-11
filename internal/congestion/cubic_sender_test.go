@@ -66,14 +66,14 @@ var _ = Describe("Cubic Sender", func() {
 	}
 
 	// Normal is that TCP acks every other segment.
-	AckNPackets := func(n int) {
+	AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
 		rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
 		sender.MaybeExitSlowStart()
 		for i := 0; i < n; i++ {
 			ackedPacketNumber++
-			sender.OnPacketAcked(ackedPacketNumber, maxDatagramSize, bytesInFlight, clock.Now())
+			sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
 		}
-		bytesInFlight -= protocol.ByteCount(n) * maxDatagramSize
+		bytesInFlight -= protocol.ByteCount(n) * packetLength
 		clock.Advance(time.Millisecond)
 	}
 
@@ -92,6 +92,7 @@ var _ = Describe("Cubic Sender", func() {
 	}
 
 	SendAvailableSendWindow := func() int { return SendAvailableSendWindowLen(maxDatagramSize) }
+	AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
 	LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
 
 	It("has the right values at startup", func() {
