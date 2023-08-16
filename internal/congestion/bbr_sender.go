@@ -105,7 +105,7 @@ type bbrSender struct {
 
 	// The filter that tracks the maximum bandwidth over the multiple recent
 	// round-trips.
-	maxBandwidth *utils.WindowedFilter
+	maxBandwidth *utils.WindowedFilter[Bandwidth]
 
 	// Minimum RTT estimate.  Automatically expires within 10 seconds (and
 	// triggers PROBE_RTT mode) if no new value is sampled during that period.
@@ -328,7 +328,9 @@ func (b *bbrSender) getTargetCongestionWindow(gain float64) protocol.ByteCount {
 }
 
 // The target congestion window during PROBE_RTT.
-// QuicByteCount ProbeRttCongestionWindow() const;
+func (b *bbrSender) probeRttCongestionWindow() protocol.ByteCount {
+	return b.minCongestionWindow
+}
 
 // bool MaybeUpdateMinRtt(QuicTime now, QuicTime::Delta sample_min_rtt);
 
