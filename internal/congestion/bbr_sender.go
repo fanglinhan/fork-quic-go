@@ -297,8 +297,35 @@ func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 	return protocol.MaxByteCount
 }
 
+// What's the current estimated bandwidth in bytes per second.
+func (b *bbrSender) bandwidthEstimate() Bandwidth {
+	return Bandwidth(b.maxBandwidth.GetBest())
+}
+
+// Returns the current estimate of the RTT of the connection.  Outside of the
+// edge cases, this is minimum RTT.
+func (b *bbrSender) getMinRtt() time.Duration {
+	if b.minRtt != 0 {
+		return b.minRtt
+	}
+	// min_rtt could be available if the handshake packet gets neutered then
+	// gets acknowledged. This could only happen for QUIC crypto where we do not
+	// drop keys.
+	return b.rttStats.MinRTT()
+}
+
 // Computes the target congestion window using the specified gain.
-// QuicByteCount GetTargetCongestionWindow(float gain) const;
+func (b *bbrSender) getTargetCongestionWindow(gain float64) protocol.ByteCount {
+	bdp := protocol.ByteCount(b.getMinRtt()) * protocol.ByteCount(b.bandwidthEstimate())
+	congestionWindow := protocol.ByteCount(gain * float64(bdp))
+
+	// BDP estimate will be zero if no bandwidth samples are available yet.
+	if congestionWindow == 0 {
+		congestionWindow = protocol.ByteCount(gain * float64(b.initialCongestionWindow))
+	}
+
+	return utils.Max[protocol.ByteCount](congestionWindow, b.minCongestionWindow)
+}
 
 // The target congestion window during PROBE_RTT.
 // QuicByteCount ProbeRttCongestionWindow() const;
@@ -344,12 +371,15 @@ func (b *bbrSender) calculatePacingRate() {
 }
 
 // Determines the appropriate congestion window for the connection.
-func (b *bbrSender) calculateCongestionWindow(priorInFlight, ackedBytes, excessAcked protocol.ByteCount) {
+func (b *bbrSender) calculateCongestionWindow(ackedBytes, excessAcked, priorInFlight protocol.ByteCount) {
+	if b.mode == bbrModeProbeRtt {
+		return
+	}
 
 }
 
 // Determines the appropriate window that constrains the in-flight during recovery.
-func (b *bbrSender) calculateRecoveryWindow(priorInFlight, bytesAcked, bytesLost protocol.ByteCount) {
+func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight protocol.ByteCount) {
 	if b.recoveryState == bbrRecoveryStateNotInRecovery {
 		return
 	}
