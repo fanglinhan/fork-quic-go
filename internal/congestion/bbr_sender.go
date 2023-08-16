@@ -97,50 +97,62 @@ func NewBbrSender(
 	return &bbrSender{}
 }
 
+// TimeUntilSend implements the SendAlgorithm interface.
 func (b *bbrSender) TimeUntilSend(bytesInFlight protocol.ByteCount) time.Time {
 	return time.Time{}
 }
 
+// HasPacingBudget implements the SendAlgorithm interface.
 func (b *bbrSender) HasPacingBudget(now time.Time) bool {
 	return false
 }
 
+// OnPacketSent implements the SendAlgorithm interface.
 func (b *bbrSender) OnPacketSent(sentTime time.Time, bytesInFlight protocol.ByteCount, packetNumber protocol.PacketNumber, bytes protocol.ByteCount, isRetransmittable bool) {
 
 }
 
+// CanSend implements the SendAlgorithm interface.
 func (b *bbrSender) CanSend(bytesInFlight protocol.ByteCount) bool {
 	return false
 }
 
+// MaybeExitSlowStart implements the SendAlgorithm interface.
 func (b *bbrSender) MaybeExitSlowStart() {
 
 }
 
+// OnPacketAcked implements the SendAlgorithm interface.
 func (b *bbrSender) OnPacketAcked(number protocol.PacketNumber, ackedBytes protocol.ByteCount, priorInFlight protocol.ByteCount, eventTime time.Time) {
 
 }
 
+// OnPacketLost implements the SendAlgorithm interface.
 func (b *bbrSender) OnPacketLost(number protocol.PacketNumber, lostBytes protocol.ByteCount, priorInFlight protocol.ByteCount) {
 
 }
 
+// OnRetransmissionTimeout implements the SendAlgorithm interface.
 func (b *bbrSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
 
 }
 
+// SetMaxDatagramSize implements the SendAlgorithm interface.
 func (b *bbrSender) SetMaxDatagramSize(protocol.ByteCount) {
 
 }
 
+// InSlowStart implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) InSlowStart() bool {
 	return false
 }
 
+// InRecovery implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) InRecovery() bool {
 	return false
 }
 
+// GetCongestionWindow implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 	return protocol.MaxByteCount
 }
