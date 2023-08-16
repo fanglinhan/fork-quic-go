@@ -8,6 +8,49 @@ import (
 	"github.com/quic-go/quic-go/logging"
 )
 
+// BbrSender implements BBR congestion control algorithm.  BBR aims to estimate
+// the current available Bottleneck Bandwidth and RTT (hence the name), and
+// regulates the pacing rate and the size of the congestion window based on
+// those signals.
+//
+// BBR relies on pacing in order to function properly.  Do not use BBR when
+// pacing is disabled.
+//
+
+const (
+	// Constants based on TCP defaults.
+	// The minimum CWND to ensure delayed acks don't reduce bandwidth measurements.
+	// Does not inflate the pacing rate.
+	defaultMinimumCongestionWindow = 4 * protocol.ByteCount(protocol.InitialPacketSizeIPv4)
+
+	// The gain used for the STARTUP, equal to 2/ln(2).
+	defaultHighGain = 2.885
+	// The newly derived gain for STARTUP, equal to 4 * ln(2)
+	derivedHighGain = 2.773
+	// The newly derived CWND gain for STARTUP, 2.
+	derivedHighCWNDGain = 2.0
+)
+
+// The cycle of gains used during the PROBE_BW stage.
+var pacingGain = [...]float64{1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0}
+
+const (
+	// The length of the gain cycle.
+	gainCycleLength = len(pacingGain)
+	// The size of the bandwidth filter window, in round-trips.
+	bandwidthWindowSize = gainCycleLength + 2
+
+	// The time after which the current min_rtt value expires.
+	minRttExpiry = 10 * time.Second
+	// The minimum time the connection can spend in PROBE_RTT mode.
+	probeRttTime = 200 * time.Millisecond
+	// If the bandwidth does not increase by the factor of |kStartupGrowthTarget|
+	// within |kRoundTripsWithoutGrowthBeforeExitingStartup| rounds, the connection
+	// will exit the STARTUP mode.
+	startupGrowthTarget                         = 1.25
+	roundTripsWithoutGrowthBeforeExitingStartup = int64(3)
+)
+
 type bbrMode int
 
 const (
@@ -23,16 +66,17 @@ const (
 	bbrModeProbeRtt
 )
 
+// Indicates how the congestion control limits the amount of bytes in flight.
 type bbrRecoveryState int
 
 const (
 	// Do not limit.
-	bbrStateNotInRecovery = iota
+	bbrRecoveryStateNotInRecovery = iota
 	// Allow an extra outstanding byte for each byte acknowledged.
-	bbrStateConservation
+	bbrRecoveryStateConservation
 	// Allow two extra outstanding bytes for each byte acknowledged (slow
 	// start).
-	bbrStateGrowth
+	bbrRecoveryStateGrowth
 )
 
 type bbrSender struct {
