@@ -81,9 +81,6 @@ const (
 
 type bbrSender struct {
 	rttStats *utils.RTTStats
-	// TODO const QuicUnackedPacketMap* unacked_packets_;
-	// TODO QuicRandom* random_;
-	// TODO QuicConnectionStats* stats_;
 
 	mode bbrMode
 
@@ -220,6 +217,9 @@ type bbrSender struct {
 
 	// Max congestion window when adjusting network parameters.
 	maxCongestionWindowWithNetworkParametersAdjusted protocol.ByteCount
+
+	// Params.
+	maxDatagramSize protocol.ByteCount
 }
 
 var (
@@ -344,13 +344,40 @@ func (b *bbrSender) calculatePacingRate() {
 }
 
 // Determines the appropriate congestion window for the connection.
-func (b *bbrSender) calculateCongestionWindow(ackedBytes, excessAcked protocol.ByteCount) {
+func (b *bbrSender) calculateCongestionWindow(priorInFlight, ackedBytes, excessAcked protocol.ByteCount) {
 
 }
 
 // Determines the appropriate window that constrains the in-flight during recovery.
-func (b *bbrSender) calculateRecoveryWindow(ackedBytes, lostBytes protocol.ByteCount) {
+func (b *bbrSender) calculateRecoveryWindow(priorInFlight, bytesAcked, bytesLost protocol.ByteCount) {
+	if b.recoveryState == bbrRecoveryStateNotInRecovery {
+		return
+	}
 
+	// Set up the initial recovery window.
+	if b.recoveryWindow == 0 {
+		b.recoveryWindow = priorInFlight + bytesAcked
+		b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
+		return
+	}
+
+	// Remove losses from the recovery window, while accounting for a potential
+	// integer underflow.
+	if b.recoveryWindow >= bytesLost {
+		b.recoveryWindow = b.recoveryWindow - bytesLost
+	} else {
+		b.recoveryWindow = b.maxDatagramSize
+	}
+
+	// In CONSERVATION mode, just subtracting losses is sufficient.  In GROWTH,
+	// release additional |bytes_acked| to achieve a slow-start-like behavior.
+	if b.recoveryState == bbrRecoveryStateGrowth {
+		b.recoveryWindow += bytesAcked
+	}
+
+	// Always allow sending at least |bytes_acked| in response.
+	b.recoveryWindow = utils.Max[protocol.ByteCount](b.recoveryWindow, priorInFlight+bytesAcked)
+	b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
 }
 
 // Called right before exiting STARTUP.
