@@ -80,6 +80,146 @@ const (
 )
 
 type bbrSender struct {
+	rttStats *utils.RTTStats
+	// TODO const QuicUnackedPacketMap* unacked_packets_;
+	// TODO QuicRandom* random_;
+	// TODO QuicConnectionStats* stats_;
+
+	mode bbrMode
+
+	// Bandwidth sampler provides BBR with the bandwidth measurements at
+	// individual points.
+	sampler *BandwidthSampler
+
+	// The number of the round trips that have occurred during the connection.
+	roundTripCount int64
+
+	// The packet number of the most recently sent packet.
+	lastSendPacket protocol.PacketNumber
+	// Acknowledgement of any packet after |current_round_trip_end_| will cause
+	// the round trip counter to advance.
+	currentRoundTripEnd protocol.PacketNumber
+
+	// Number of congestion events with some losses, in the current round.
+	numLossEventsInRound int64
+
+	// Number of total bytes lost in the current round.
+	bytesLostInRound protocol.ByteCount
+
+	// The filter that tracks the maximum bandwidth over the multiple recent
+	// round-trips.
+	maxBandwidth *utils.WindowedFilter
+
+	// Minimum RTT estimate.  Automatically expires within 10 seconds (and
+	// triggers PROBE_RTT mode) if no new value is sampled during that period.
+	minRtt time.Duration
+	// The time at which the current value of |min_rtt_| was assigned.
+	minRttTimestamp time.Time
+
+	// The maximum allowed number of bytes in flight.
+	congestionWindow protocol.ByteCount
+
+	// The initial value of the |congestion_window_|.
+	initialCongestionWindow protocol.ByteCount
+
+	// The largest value the |congestion_window_| can achieve.
+	maxCongestionWindow protocol.ByteCount
+
+	// The smallest value the |congestion_window_| can achieve.
+	minCongestionWindow protocol.ByteCount
+
+	// The pacing gain applied during the STARTUP phase.
+	highGain float64
+
+	// The CWND gain applied during the STARTUP phase.
+	highCwndGain float64
+
+	// The pacing gain applied during the DRAIN phase.
+	drainGain float64
+
+	// The current pacing rate of the connection.
+	pacingRate Bandwidth
+
+	// The gain currently applied to the pacing rate.
+	pacingGain float64
+	// The gain currently applied to the congestion window.
+	congestionWindowGain float64
+
+	// The gain used for the congestion window during PROBE_BW.  Latched from
+	// quic_bbr_cwnd_gain flag.
+	congestionWindowGainConstant float64
+	// The number of RTTs to stay in STARTUP mode.  Defaults to 3.
+	numStartupRtts int64
+
+	// Number of round-trips in PROBE_BW mode, used for determining the current
+	// pacing gain cycle.
+	cycleCurrentOffset int
+	// The time at which the last pacing gain cycle was started.
+	lastCycleStart time.Time
+
+	// Indicates whether the connection has reached the full bandwidth mode.
+	isAtFullBandwidth bool
+	// Number of rounds during which there was no significant bandwidth increase.
+	roundsWithoutBandwidthGain int64
+	// The bandwidth compared to which the increase is measured.
+	bandwidthAtLastRound Bandwidth
+
+	// Set to true upon exiting quiescence.
+	exitingQuiescence bool
+
+	// Time at which PROBE_RTT has to be exited.  Setting it to zero indicates
+	// that the time is yet unknown as the number of packets in flight has not
+	// reached the required value.
+	exitProbeRttAt time.Time
+	// Indicates whether a round-trip has passed since PROBE_RTT became active.
+	probeRttRoundPassed bool
+
+	// Indicates whether the most recent bandwidth sample was marked as
+	// app-limited.
+	lastSampleIsAppLimited bool
+	// Indicates whether any non app-limited samples have been recorded.
+	hasNoAppLimitedSample bool
+
+	// Current state of recovery.
+	recoveryState bbrRecoveryState
+	// Receiving acknowledgement of a packet after |end_recovery_at_| will cause
+	// BBR to exit the recovery mode.  A value above zero indicates at least one
+	// loss has been detected, so it must not be set back to zero.
+	endRecoveryAt protocol.PacketNumber
+	// A window used to limit the number of bytes in flight during loss recovery.
+	recoveryWindow protocol.ByteCount
+	// If true, consider all samples in recovery app-limited.
+	isAppLimitedRecovery bool
+
+	// When true, pace at 1.5x and disable packet conservation in STARTUP.
+	slowerStartup bool
+	// When true, disables packet conservation in STARTUP.
+	rateBasedStartup bool
+
+	// When true, add the most recent ack aggregation measurement during STARTUP.
+	enableAckAggregationDuringStartup bool
+	// When true, expire the windowed ack aggregation values in STARTUP when
+	// bandwidth increases more than 25%.
+	expireAckAggregationInStartup bool
+
+	// If true, will not exit low gain mode until bytes_in_flight drops below BDP
+	// or it's time for high gain mode.
+	drainToTarget bool
+
+	// If true, slow down pacing rate in STARTUP when overshooting is detected.
+	detectOvershooting bool
+	// Bytes lost while detect_overshooting_ is true.
+	bytesLostWhileDetectingOvershooting protocol.ByteCount
+	// Slow down pacing rate if
+	// bytes_lost_while_detecting_overshooting_ *
+	// bytes_lost_multiplier_while_detecting_overshooting_ > IW.
+	bytesLostMultiplierWhileDetectingOvershooting uint8
+	// When overshooting is detected, do not drop pacing_rate_ below this value /
+	// min_rtt.
+	cwndToCalculateMinPacingRate protocol.ByteCount
+
+	// Max congestion window when adjusting network parameters.
+	maxCongestionWindowWithNetworkParametersAdjusted protocol.ByteCount
 }
 
 var (
@@ -156,3 +296,65 @@ func (b *bbrSender) InRecovery() bool {
 func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 	return protocol.MaxByteCount
 }
+
+// Computes the target congestion window using the specified gain.
+// QuicByteCount GetTargetCongestionWindow(float gain) const;
+
+// The target congestion window during PROBE_RTT.
+// QuicByteCount ProbeRttCongestionWindow() const;
+
+// bool MaybeUpdateMinRtt(QuicTime now, QuicTime::Delta sample_min_rtt);
+
+// Enters the STARTUP mode.
+// void EnterStartupMode(QuicTime now);
+
+// Enters the PROBE_BW mode.
+// void EnterProbeBandwidthMode(QuicTime now);
+
+// Updates the round-trip counter if a round-trip has passed.  Returns true if
+// the counter has been advanced.
+// bool UpdateRoundTripCounter(QuicPacketNumber last_acked_packet);
+
+// Updates the current gain used in PROBE_BW mode.
+// void UpdateGainCyclePhase(QuicTime now, QuicByteCount prior_in_flight, bool has_losses);
+
+// Tracks for how many round-trips the bandwidth has not increased
+// significantly.
+// void CheckIfFullBandwidthReached(const SendTimeState& last_packet_send_state);
+
+// Transitions from STARTUP to DRAIN and from DRAIN to PROBE_BW if
+// appropriate.
+// void MaybeExitStartupOrDrain(QuicTime now);
+
+// Decides whether to enter or exit PROBE_RTT.
+// void MaybeEnterOrExitProbeRtt(QuicTime now, bool is_round_start, bool min_rtt_expired);
+
+// Determines whether BBR needs to enter, exit or advance state of the
+// recovery.
+// void UpdateRecoveryState(QuicPacketNumber last_acked_packet, bool has_losses, bool is_round_start);
+
+// Updates the ack aggregation max filter in bytes.
+// Returns the most recent addition to the filter, or |newly_acked_bytes| if
+// nothing was fed in to the filter.
+// QuicByteCount UpdateAckAggregationBytes(QuicTime ack_time, QuicByteCount newly_acked_bytes);
+
+// Determines the appropriate pacing rate for the connection.
+func (b *bbrSender) calculatePacingRate() {
+
+}
+
+// Determines the appropriate congestion window for the connection.
+func (b *bbrSender) calculateCongestionWindow(ackedBytes, excessAcked protocol.ByteCount) {
+
+}
+
+// Determines the appropriate window that constrains the in-flight during recovery.
+func (b *bbrSender) calculateRecoveryWindow(ackedBytes, lostBytes protocol.ByteCount) {
+
+}
+
+// Called right before exiting STARTUP.
+// void OnExitStartup(QuicTime now);
+
+// Return whether we should exit STARTUP due to excessive loss.
+// bool ShouldExitStartupDueToLoss(const SendTimeState& last_packet_send_state) const;
