@@ -84,12 +84,8 @@ type bbrSender struct {
 
 	mode bbrMode
 
-	// Bandwidth sampler provides BBR with the bandwidth measurements at
-	// individual points.
-	sampler *BandwidthSampler
-
 	// The number of the round trips that have occurred during the connection.
-	roundTripCount int64
+	roundTripCount uint64
 
 	// The packet number of the most recently sent packet.
 	lastSendPacket protocol.PacketNumber
@@ -105,7 +101,7 @@ type bbrSender struct {
 
 	// The filter that tracks the maximum bandwidth over the multiple recent
 	// round-trips.
-	maxBandwidth *utils.WindowedFilter[Bandwidth]
+	maxBandwidth *utils.WindowedFilter[Bandwidth, uint64]
 
 	// Minimum RTT estimate.  Automatically expires within 10 seconds (and
 	// triggers PROBE_RTT mode) if no new value is sampled during that period.
@@ -376,6 +372,11 @@ func (b *bbrSender) calculatePacingRate() {
 func (b *bbrSender) calculateCongestionWindow(ackedBytes, excessAcked, priorInFlight protocol.ByteCount) {
 	if b.mode == bbrModeProbeRtt {
 		return
+	}
+
+	// targetWindow := b.getTargetCongestionWindow(b.congestionWindowGain)
+	if b.isAtFullBandwidth {
+		// targetWindow +=
 	}
 
 }
