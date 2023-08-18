@@ -8,11 +8,11 @@ import (
 	"github.com/quic-go/quic-go/internal/utils/ringbuffer"
 )
 
-type RoundTripCount uint64
+type roundTripCount uint64
 
 // SendTimeState is a subset of ConnectionStateOnSentPacket which is returned
 // to the caller when the packet is acked or lost.
-type SendTimeState struct {
+type sendTimeState struct {
 	// Whether other states in this object is valid.
 	isValid bool
 	// Whether the sender is app limited at the time the packet was sent.
@@ -28,7 +28,7 @@ type SendTimeState struct {
 	totalBytesLost protocol.ByteCount
 }
 
-type ExtraAckedEvent struct {
+type extraAckedEvent struct {
 	// The excess bytes acknowlwedged in the time delta for this event.
 	extraAcked protocol.ByteCount
 
@@ -36,15 +36,15 @@ type ExtraAckedEvent struct {
 	bytesAcked protocol.ByteCount
 	timeDelta  time.Duration
 	// The round trip of the event.
-	round RoundTripCount
+	round roundTripCount
 }
 
-func MaxExtraAckedEventFunc(a, b ExtraAckedEvent) bool {
+func maxExtraAckedEventFunc(a, b extraAckedEvent) bool {
 	return a.extraAcked >= b.extraAcked
 }
 
 // BandwidthSample
-type BandwidthSample struct {
+type bandwidthSample struct {
 	// The bandwidth at that particular sample. Zero if no valid bandwidth sample
 	// is available.
 	bandwidth Bandwidth
@@ -52,16 +52,16 @@ type BandwidthSample struct {
 	// available.  Does not correct for delayed ack time.
 	rtt time.Duration
 	// States captured when the packet was sent.
-	stateAtSend SendTimeState
+	stateAtSend sendTimeState
 }
 
 // MaxAckHeightTracker is part of the BandwidthSampler. It is called after every
 // ack event to keep track the degree of ack aggregation(a.k.a "ack height").
-type MaxAckHeightTracker struct {
+type maxAckHeightTracker struct {
 
 	// Tracks the maximum number of bytes acked faster than the estimated
 	// bandwidth.
-	maxAckHeightFilter *utils.WindowedFilter[ExtraAckedEvent, RoundTripCount]
+	maxAckHeightFilter *utils.WindowedFilter[extraAckedEvent, roundTripCount]
 	// The time this aggregation started and the number of bytes acked during it.
 	aggregationEpochStartTime time.Time
 	aggregationEpochBytes     protocol.ByteCount
@@ -75,14 +75,14 @@ type MaxAckHeightTracker struct {
 	reduceExtraAckedOnBandwidthIncrease    bool
 }
 
-func (m *MaxAckHeightTracker) Get() protocol.ByteCount {
+func (m *maxAckHeightTracker) Get() protocol.ByteCount {
 	return m.maxAckHeightFilter.GetBest().extraAcked
 }
 
-func (m *MaxAckHeightTracker) Update(
+func (m *maxAckHeightTracker) Update(
 	bandwidthEstimate Bandwidth,
 	isNewMaxBandwidth bool,
-	roundTripCount RoundTripCount,
+	roundTripCount roundTripCount,
 	lastSentPacketNumber protocol.PacketNumber,
 	lastAckedPacketNumber protocol.PacketNumber,
 	ackTime time.Time,
@@ -150,7 +150,7 @@ func (m *MaxAckHeightTracker) Update(
 
 	// Compute how many extra bytes were delivered vs max bandwidth.
 	extraBytesAcked := m.aggregationEpochBytes - expectedBytesAcked
-	new_event := ExtraAckedEvent{
+	new_event := extraAckedEvent{
 		extraAcked: expectedBytesAcked,
 		bytesAcked: m.aggregationEpochBytes,
 		timeDelta:  aggregationDelta,
@@ -159,54 +159,54 @@ func (m *MaxAckHeightTracker) Update(
 	return extraBytesAcked
 }
 
-func (m *MaxAckHeightTracker) SetFilterWindowLength(length RoundTripCount) {
+func (m *maxAckHeightTracker) SetFilterWindowLength(length roundTripCount) {
 	m.maxAckHeightFilter.SetWindowLength(length)
 }
 
-func (m *MaxAckHeightTracker) Reset(newHeight protocol.ByteCount, newTime RoundTripCount) {
-	newEvent := ExtraAckedEvent{
+func (m *maxAckHeightTracker) Reset(newHeight protocol.ByteCount, newTime roundTripCount) {
+	newEvent := extraAckedEvent{
 		extraAcked: newHeight,
 		round:      newTime,
 	}
 	m.maxAckHeightFilter.Reset(newEvent, newTime)
 }
 
-func (m *MaxAckHeightTracker) SetAckAggregationBandwidthThreshold(threshold float64) {
+func (m *maxAckHeightTracker) SetAckAggregationBandwidthThreshold(threshold float64) {
 	m.ackAggregationBandwidthThreshold = threshold
 }
 
-func (m *MaxAckHeightTracker) SetStartNewAggregationEpochAfterFullRound(value bool) {
+func (m *maxAckHeightTracker) SetStartNewAggregationEpochAfterFullRound(value bool) {
 	m.startNewAggregationEpochAfterFullRound = value
 }
 
-func (m *MaxAckHeightTracker) SetReduceExtraAckedOnBandwidthIncrease(value bool) {
+func (m *maxAckHeightTracker) SetReduceExtraAckedOnBandwidthIncrease(value bool) {
 	m.reduceExtraAckedOnBandwidthIncrease = value
 }
 
-func (m *MaxAckHeightTracker) AckAggregationBandwidthThreshold() float64 {
+func (m *maxAckHeightTracker) AckAggregationBandwidthThreshold() float64 {
 	return m.ackAggregationBandwidthThreshold
 }
 
-func (m *MaxAckHeightTracker) NumAckAggregationEpochs() uint64 {
+func (m *maxAckHeightTracker) NumAckAggregationEpochs() uint64 {
 	return m.numAckAggregationEpochs
 }
 
 // AckPoint represents a point on the ack line.
-type AckPoint struct {
+type ackPoint struct {
 	ackTime         time.Time
 	totalBytesAcked protocol.ByteCount
 }
 
 // RecentAckPoints maintains the most recent 2 ack points at distinct times.
-type RecentAckPoints struct {
-	ackPoints [2]AckPoint
+type recentAckPoints struct {
+	ackPoints [2]ackPoint
 }
 
 // ConnectionStateOnSentPacket represents the information about a sent packet
 // and the state of the connection at the moment the packet was sent,
 // specifically the information about the most recently acknowledged packet at
 // that moment.
-type ConnectionStateOnSentPacket struct {
+type connectionStateOnSentPacket struct {
 	packetNumber protocol.PacketNumber
 	// Time at which the packet is sent.
 	sendTime time.Time
@@ -223,7 +223,7 @@ type ConnectionStateOnSentPacket struct {
 	lastAckedPacketAckTime time.Time
 	// Send time states that are returned to the congestion controller when the
 	// packet is acked or lost.
-	sendTimeState SendTimeState
+	sendTimeState sendTimeState
 }
 
 // BandwidthSampler keeps track of sent and acknowledged packets and outputs a
@@ -308,7 +308,7 @@ type ConnectionStateOnSentPacket struct {
 // up until an ack for a packet that was sent after OnAppLimited() was called.
 // Note that while the scenario above is not the only scenario when the
 // connection is app-limited, the approach works in other cases too.
-type BandwidthSampler struct {
+type bandwidthSampler struct {
 	// The total number of congestion controlled bytes sent during the connection.
 	totalBytesSent protocol.ByteCount
 
@@ -340,15 +340,15 @@ type BandwidthSampler struct {
 
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
-	connectionStateMap PacketNumberIndexedQueue[ConnectionStateOnSentPacket]
+	connectionStateMap packetNumberIndexedQueue[connectionStateOnSentPacket]
 
-	// RecentAckPoints recent_ack_points_;
-	a0Candidates ringbuffer.RingBuffer[AckPoint]
+	recentAckPoints recentAckPoints
+	a0Candidates    ringbuffer.RingBuffer[ackPoint]
 
 	// Maximum number of tracked packets.
 	maxTrackedPackets protocol.ByteCount
 
-	maxAckHeightTracker              MaxAckHeightTracker
+	maxAckHeightTracker              maxAckHeightTracker
 	totalBytesAckedAfterLastAckEvent protocol.ByteCount
 
 	// True if connection option 'BSAO' is set.

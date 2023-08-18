@@ -5,7 +5,7 @@ import (
 	"github.com/quic-go/quic-go/internal/utils/ringbuffer"
 )
 
-// PacketNumberIndexedQueue is a queue of mostly continuous numbered entries
+// packetNumberIndexedQueue is a queue of mostly continuous numbered entries
 // which supports the following operations:
 // - adding elements to the end of the queue, or at some point past the end
 // - removing elements in any order
@@ -32,14 +32,14 @@ type entryWrapper[T any] struct {
 	entry   T
 }
 
-type PacketNumberIndexedQueue[T any] struct {
+type packetNumberIndexedQueue[T any] struct {
 	entries                ringbuffer.RingBuffer[entryWrapper[T]]
 	numberOfPresentEntries int
 	firstPacket            protocol.PacketNumber
 }
 
-func NewPacketNumberIndexedQueue[T any](size int) *PacketNumberIndexedQueue[T] {
-	q := &PacketNumberIndexedQueue[T]{
+func newPacketNumberIndexedQueue[T any](size int) *packetNumberIndexedQueue[T] {
+	q := &packetNumberIndexedQueue[T]{
 		firstPacket: protocol.InvalidPacketNumber,
 	}
 
@@ -52,7 +52,7 @@ func NewPacketNumberIndexedQueue[T any](size int) *PacketNumberIndexedQueue[T] {
 // queue, filling up the missing intermediate entries as necessary.  Returns
 // true if the element has been inserted successfully, false if it was already
 // in the queue or inserted out of order.
-func (p *PacketNumberIndexedQueue[T]) Emplace(packetNumber protocol.PacketNumber, entry *T) bool {
+func (p *packetNumberIndexedQueue[T]) Emplace(packetNumber protocol.PacketNumber, entry *T) bool {
 	if packetNumber == protocol.InvalidPacketNumber || entry == nil {
 		return false
 	}
@@ -90,7 +90,7 @@ func (p *PacketNumberIndexedQueue[T]) Emplace(packetNumber protocol.PacketNumber
 
 // GetEntry Retrieve the entry associated with the packet number.  Returns the pointer
 // to the entry in case of success, or nullptr if the entry does not exist.
-func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumber) *T {
+func (p *packetNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumber) *T {
 	ew := p.getEntryWraper(packetNumber)
 	if ew == nil {
 		return nil
@@ -101,7 +101,7 @@ func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumbe
 
 // Remove, Same as above, but if an entry is present in the queue, also call f(entry)
 // before removing it.
-func (p *PacketNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber, f func(T)) bool {
+func (p *packetNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber, f func(T)) bool {
 	ew := p.getEntryWraper(packetNumber)
 	if ew == nil {
 		return false
@@ -122,7 +122,7 @@ func (p *PacketNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber,
 // RemoveUpTo, but not including |packet_number|.
 // Unused slots in the front are also removed, which means when the function
 // returns, |first_packet()| can be larger than |packet_number|.
-func (p *PacketNumberIndexedQueue[T]) RemoveUpTo(packetNumber protocol.PacketNumber) {
+func (p *packetNumberIndexedQueue[T]) RemoveUpTo(packetNumber protocol.PacketNumber) {
 	for !p.entries.Empty() &&
 		p.firstPacket != protocol.InvalidPacketNumber &&
 		p.firstPacket < packetNumber {
@@ -138,30 +138,30 @@ func (p *PacketNumberIndexedQueue[T]) RemoveUpTo(packetNumber protocol.PacketNum
 }
 
 // IsEmpty return if queue is empty.
-func (p *PacketNumberIndexedQueue[T]) IsEmpty() bool {
+func (p *packetNumberIndexedQueue[T]) IsEmpty() bool {
 	return p.numberOfPresentEntries == 0
 }
 
 // NumberOfPresentEntries returns the number of entries in the queue.
-func (p *PacketNumberIndexedQueue[T]) NumberOfPresentEntries(packetNumber protocol.PacketNumber) int {
+func (p *packetNumberIndexedQueue[T]) NumberOfPresentEntries(packetNumber protocol.PacketNumber) int {
 	return p.numberOfPresentEntries
 }
 
 // EntrySlotsUsed returns the number of entries allocated in the underlying deque.  This is
 // proportional to the memory usage of the queue.
-func (p *PacketNumberIndexedQueue[T]) EntrySlotsUsed(packetNumber protocol.PacketNumber) int {
+func (p *packetNumberIndexedQueue[T]) EntrySlotsUsed(packetNumber protocol.PacketNumber) int {
 	return p.entries.Len()
 }
 
 // LastPacket returns packet number of the first entry in the queue.
-func (p *PacketNumberIndexedQueue[T]) FirstPacket() (packetNumber protocol.PacketNumber) {
+func (p *packetNumberIndexedQueue[T]) FirstPacket() (packetNumber protocol.PacketNumber) {
 	return p.firstPacket
 }
 
 // LastPacket returns packet number of the last entry ever inserted in the queue.  Note that the
 // entry in question may have already been removed.  Zero if the queue is
 // empty.
-func (p *PacketNumberIndexedQueue[T]) LastPacket() (packetNumber protocol.PacketNumber) {
+func (p *packetNumberIndexedQueue[T]) LastPacket() (packetNumber protocol.PacketNumber) {
 	if p.IsEmpty() {
 		return protocol.InvalidPacketNumber
 	}
@@ -169,7 +169,7 @@ func (p *PacketNumberIndexedQueue[T]) LastPacket() (packetNumber protocol.Packet
 	return p.firstPacket + protocol.PacketNumber(p.entries.Len()-1)
 }
 
-func (p *PacketNumberIndexedQueue[T]) clearup() {
+func (p *packetNumberIndexedQueue[T]) clearup() {
 	for !p.entries.Empty() && !p.entries.Front().present {
 		p.entries.PopFront()
 		p.firstPacket++
@@ -179,7 +179,7 @@ func (p *PacketNumberIndexedQueue[T]) clearup() {
 	}
 }
 
-func (p *PacketNumberIndexedQueue[T]) getEntryWraper(packetNumber protocol.PacketNumber) *entryWrapper[T] {
+func (p *packetNumberIndexedQueue[T]) getEntryWraper(packetNumber protocol.PacketNumber) *entryWrapper[T] {
 	if packetNumber == protocol.InvalidPacketNumber ||
 		p.IsEmpty() ||
 		packetNumber < p.firstPacket {

@@ -85,7 +85,7 @@ type bbrSender struct {
 	mode bbrMode
 
 	// The number of the round trips that have occurred during the connection.
-	roundTripCount RoundTripCount
+	roundTripCount roundTripCount
 
 	// The packet number of the most recently sent packet.
 	lastSendPacket protocol.PacketNumber
@@ -101,7 +101,7 @@ type bbrSender struct {
 
 	// The filter that tracks the maximum bandwidth over the multiple recent
 	// round-trips.
-	maxBandwidth *utils.WindowedFilter[Bandwidth, RoundTripCount]
+	maxBandwidth *utils.WindowedFilter[Bandwidth, roundTripCount]
 
 	// Minimum RTT estimate.  Automatically expires within 10 seconds (and
 	// triggers PROBE_RTT mode) if no new value is sampled during that period.
