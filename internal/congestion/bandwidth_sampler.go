@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
+	"github.com/quic-go/quic-go/internal/utils"
+	"github.com/quic-go/quic-go/internal/utils/ringbuffer"
 )
 
 type RoundTripCount uint64
@@ -55,7 +57,7 @@ type MaxAckHeightTracker struct {
 
 	// Tracks the maximum number of bytes acked faster than the estimated
 	// bandwidth.
-	// maxAckHeightFilter *utils.WindowedFilter[]
+	maxAckHeightFilter *utils.WindowedFilter[ExtraAckedEvent, RoundTripCount]
 	// The time this aggregation started and the number of bytes acked during it.
 	aggregationEpochStartTime time.Time
 	aggregationEpochBytes     protocol.ByteCount
@@ -218,10 +220,10 @@ type BandwidthSampler struct {
 
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
-	// PacketNumberIndexedQueue<ConnectionStateOnSentPacket> connection_state_map_;
+	connectionStateMap PacketNumberIndexedQueue[ConnectionStateOnSentPacket]
 
 	// RecentAckPoints recent_ack_points_;
-	// quiche::QuicheCircularDeque<AckPoint> a0_candidates_;
+	a0Candidates ringbuffer.RingBuffer[AckPoint]
 
 	// Maximum number of tracked packets.
 	maxTrackedPackets protocol.ByteCount

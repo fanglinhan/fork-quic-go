@@ -31,7 +31,7 @@ import (
 // best.
 
 type WindowedFilterValue interface {
-	constraints.Ordered
+	comparable
 }
 
 type WindowedFilterTime interface {
@@ -52,13 +52,13 @@ type Sample[V WindowedFilterValue, T WindowedFilterTime] struct {
 
 // Compares two values and returns true if the first is greater than or equal
 // to the second.
-func MaxFilter[V WindowedFilterValue](a, b V) bool {
+func MaxFilter[O constraints.Ordered](a, b O) bool {
 	return a >= b
 }
 
 // Compares two values and returns true if the first is less than or equal
 // to the second.
-func MinFilter[V WindowedFilterValue](a, b V) bool {
+func MinFilter[O constraints.Ordered](a, b O) bool {
 	return a <= b
 }
 
