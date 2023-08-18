@@ -124,7 +124,7 @@ func (p *PacketNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber,
 // returns, |first_packet()| can be larger than |packet_number|.
 func (p *PacketNumberIndexedQueue[T]) RemoveUpTo(packetNumber protocol.PacketNumber) {
 	for !p.entries.Empty() &&
-		p.firstPacket == protocol.InvalidPacketNumber &&
+		p.firstPacket != protocol.InvalidPacketNumber &&
 		p.firstPacket < packetNumber {
 		if p.entries.Front().present {
 			p.numberOfPresentEntries--
