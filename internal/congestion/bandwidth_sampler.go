@@ -39,6 +39,10 @@ type ExtraAckedEvent struct {
 	round RoundTripCount
 }
 
+func MaxExtraAckedEventFunc(a, b ExtraAckedEvent) bool {
+	return a.extraAcked >= b.extraAcked
+}
+
 // BandwidthSample
 type BandwidthSample struct {
 	// The bandwidth at that particular sample. Zero if no valid bandwidth sample
@@ -69,6 +73,118 @@ type MaxAckHeightTracker struct {
 	ackAggregationBandwidthThreshold       float64
 	startNewAggregationEpochAfterFullRound bool
 	reduceExtraAckedOnBandwidthIncrease    bool
+}
+
+func (m *MaxAckHeightTracker) Get() protocol.ByteCount {
+	return m.maxAckHeightFilter.GetBest().extraAcked
+}
+
+func (m *MaxAckHeightTracker) Update(
+	bandwidthEstimate Bandwidth,
+	isNewMaxBandwidth bool,
+	roundTripCount RoundTripCount,
+	lastSentPacketNumber protocol.PacketNumber,
+	lastAckedPacketNumber protocol.PacketNumber,
+	ackTime time.Time,
+	bytesAcked protocol.ByteCount) protocol.ByteCount {
+
+	forceNewEpoch := false
+
+	if m.reduceExtraAckedOnBandwidthIncrease && isNewMaxBandwidth {
+		// Save and clear existing entries.
+		best := m.maxAckHeightFilter.GetBest()
+		secondBest := m.maxAckHeightFilter.GetSecondBest()
+		thirdBest := m.maxAckHeightFilter.GetThirdBest()
+		m.maxAckHeightFilter.Clear()
+
+		// Reinsert the heights into the filter after recalculating.
+		expectedBytesAcked := bandwidthEstimate * Bandwidth(best.timeDelta)
+		if expectedBytesAcked < Bandwidth(best.bytesAcked) {
+			best.extraAcked = best.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			m.maxAckHeightFilter.Update(best, best.round)
+		}
+		expectedBytesAcked = bandwidthEstimate * Bandwidth(secondBest.timeDelta)
+		if expectedBytesAcked < Bandwidth(secondBest.bytesAcked) {
+			secondBest.extraAcked = secondBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			m.maxAckHeightFilter.Update(secondBest, secondBest.round)
+		}
+		expectedBytesAcked = bandwidthEstimate * Bandwidth(thirdBest.timeDelta)
+		if expectedBytesAcked < Bandwidth(thirdBest.bytesAcked) {
+			thirdBest.extraAcked = thirdBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			m.maxAckHeightFilter.Update(thirdBest, thirdBest.round)
+		}
+	}
+
+	// If any packet sent after the start of the epoch has been acked, start a new
+	// epoch.
+	if m.startNewAggregationEpochAfterFullRound &&
+		m.lastSentPacketNumberBeforeEpoch != protocol.InvalidPacketNumber &&
+		lastAckedPacketNumber != protocol.InvalidPacketNumber &&
+		lastAckedPacketNumber > m.lastSentPacketNumberBeforeEpoch {
+		forceNewEpoch = true
+	}
+	if m.aggregationEpochStartTime.IsZero() || forceNewEpoch {
+		m.aggregationEpochBytes = bytesAcked
+		m.aggregationEpochStartTime = ackTime
+		m.lastSentPacketNumberBeforeEpoch = lastSentPacketNumber
+		m.numAckAggregationEpochs++
+		return 0
+	}
+
+	// Compute how many bytes are expected to be delivered, assuming max bandwidth
+	// is correct.
+	aggregationDelta := ackTime.Sub(m.aggregationEpochStartTime)
+	expectedBytesAcked := protocol.ByteCount(bandwidthEstimate) * protocol.ByteCount(aggregationDelta)
+	// Reset the current aggregation epoch as soon as the ack arrival rate is less
+	// than or equal to the max bandwidth.
+	if m.aggregationEpochBytes <= protocol.ByteCount(m.ackAggregationBandwidthThreshold)*expectedBytesAcked {
+		// Reset to start measuring a new aggregation epoch.
+		m.aggregationEpochBytes = bytesAcked
+		m.aggregationEpochStartTime = ackTime
+		m.lastSentPacketNumberBeforeEpoch = lastAckedPacketNumber
+		m.numAckAggregationEpochs++
+		return 0
+	}
+
+	m.aggregationEpochBytes += bytesAcked
+
+	// Compute how many extra bytes were delivered vs max bandwidth.
+	extraBytesAcked := m.aggregationEpochBytes - expectedBytesAcked
+	new_event := ExtraAckedEvent{
+		extraAcked: expectedBytesAcked,
+		bytesAcked: m.aggregationEpochBytes,
+		timeDelta:  aggregationDelta,
+	}
+	m.maxAckHeightFilter.Update(new_event, roundTripCount)
+	return extraBytesAcked
+}
+
+func (m *MaxAckHeightTracker) SetFilterWindowLength() {
+
+}
+
+func (m *MaxAckHeightTracker) Reset() {
+
+}
+
+func (m *MaxAckHeightTracker) SetAckAggregationBandwidthThreshold() {
+
+}
+
+func (m *MaxAckHeightTracker) SetStartNewAggregationEpochAfterFullRound() {
+
+}
+
+func (m *MaxAckHeightTracker) SetReduceExtraAckedOnBandwidthIncrease() {
+
+}
+
+func (m *MaxAckHeightTracker) AckAggregationBandwidthThreshold() {
+
+}
+
+func (m *MaxAckHeightTracker) NumAckAggregationEpochs() {
+
 }
 
 // AckPoint represents a point on the ack line.
