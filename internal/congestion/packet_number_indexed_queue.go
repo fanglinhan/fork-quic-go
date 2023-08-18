@@ -90,20 +90,9 @@ func (p *PacketNumberIndexedQueue[T]) Emplace(packetNumber protocol.PacketNumber
 
 // GetEntry Retrieve the entry associated with the packet number.  Returns the pointer
 // to the entry in case of success, or nullptr if the entry does not exist.
-func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumber) (entry *T) {
-	if packetNumber == protocol.InvalidPacketNumber ||
-		p.IsEmpty() ||
-		packetNumber < p.firstPacket {
-		return nil
-	}
-
-	offset := int(packetNumber - p.firstPacket)
-	if offset >= p.entries.Len() {
-		return nil
-	}
-
-	ew := p.entries.Offset(offset)
-	if !ew.present {
+func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumber) *T {
+	ew := p.getEntryWraper(packetNumber)
+	if ew == nil {
 		return nil
 	}
 
@@ -112,14 +101,39 @@ func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumbe
 
 // Remove, Same as above, but if an entry is present in the queue, also call f(entry)
 // before removing it.
-func (p *PacketNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber) bool {
-	return false
+func (p *PacketNumberIndexedQueue[T]) Remove(packetNumber protocol.PacketNumber, f func(T)) bool {
+	ew := p.getEntryWraper(packetNumber)
+	if ew == nil {
+		return false
+	}
+	if f != nil {
+		f(ew.entry)
+	}
+	ew.present = false
+	p.numberOfPresentEntries--
+
+	if packetNumber == p.FirstPacket() {
+		p.clearup()
+	}
+
+	return true
 }
 
 // RemoveUpTo, but not including |packet_number|.
 // Unused slots in the front are also removed, which means when the function
 // returns, |first_packet()| can be larger than |packet_number|.
 func (p *PacketNumberIndexedQueue[T]) RemoveUpTo(packetNumber protocol.PacketNumber) {
+	for !p.entries.Empty() &&
+		p.firstPacket == protocol.InvalidPacketNumber &&
+		p.firstPacket < packetNumber {
+		if p.entries.Front().present {
+			p.numberOfPresentEntries--
+		}
+		p.entries.PopFront()
+		p.firstPacket++
+	}
+	p.clearup()
+
 	return
 }
 
@@ -153,4 +167,34 @@ func (p *PacketNumberIndexedQueue[T]) LastPacket() (packetNumber protocol.Packet
 	}
 
 	return p.firstPacket + protocol.PacketNumber(p.entries.Len()-1)
+}
+
+func (p *PacketNumberIndexedQueue[T]) clearup() {
+	for !p.entries.Empty() && !p.entries.Front().present {
+		p.entries.PopFront()
+		p.firstPacket++
+	}
+	if p.entries.Empty() {
+		p.firstPacket = protocol.InvalidPacketNumber
+	}
+}
+
+func (p *PacketNumberIndexedQueue[T]) getEntryWraper(packetNumber protocol.PacketNumber) *entryWrapper[T] {
+	if packetNumber == protocol.InvalidPacketNumber ||
+		p.IsEmpty() ||
+		packetNumber < p.firstPacket {
+		return nil
+	}
+
+	offset := int(packetNumber - p.firstPacket)
+	if offset >= p.entries.Len() {
+		return nil
+	}
+
+	ew := p.entries.Offset(offset)
+	if ew == nil || !ew.present {
+		return nil
+	}
+
+	return ew
 }
