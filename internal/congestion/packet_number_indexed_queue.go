@@ -91,7 +91,23 @@ func (p *PacketNumberIndexedQueue[T]) Emplace(packetNumber protocol.PacketNumber
 // GetEntry Retrieve the entry associated with the packet number.  Returns the pointer
 // to the entry in case of success, or nullptr if the entry does not exist.
 func (p *PacketNumberIndexedQueue[T]) GetEntry(packetNumber protocol.PacketNumber) (entry *T) {
-	return nil
+	if packetNumber == protocol.InvalidPacketNumber ||
+		p.IsEmpty() ||
+		packetNumber < p.firstPacket {
+		return nil
+	}
+
+	offset := int(packetNumber - p.firstPacket)
+	if offset >= p.entries.Len() {
+		return nil
+	}
+
+	ew := p.entries.Offset(offset)
+	if !ew.present {
+		return nil
+	}
+
+	return &ew.entry
 }
 
 // Remove, Same as above, but if an entry is present in the queue, also call f(entry)
