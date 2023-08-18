@@ -4,8 +4,9 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
-	"github.com/quic-go/quic-go/internal/utils"
 )
+
+type RoundTripCount uint64
 
 // SendTimeState is a subset of ConnectionStateOnSentPacket which is returned
 // to the caller when the packet is acked or lost.
@@ -23,6 +24,60 @@ type SendTimeState struct {
 	totalBytesAcked protocol.ByteCount
 	// Total number of lost bytes at the time the packet was sent.
 	totalBytesLost protocol.ByteCount
+}
+
+type ExtraAckedEvent struct {
+	// The excess bytes acknowlwedged in the time delta for this event.
+	extraAcked protocol.ByteCount
+
+	// The bytes acknowledged and time delta from the event.
+	bytesAcked protocol.ByteCount
+	timeDelta  time.Duration
+	// The round trip of the event.
+	round RoundTripCount
+}
+
+// BandwidthSample
+type BandwidthSample struct {
+	// The bandwidth at that particular sample. Zero if no valid bandwidth sample
+	// is available.
+	bandwidth Bandwidth
+	// The RTT measurement at this particular sample.  Zero if no RTT sample is
+	// available.  Does not correct for delayed ack time.
+	rtt time.Duration
+	// States captured when the packet was sent.
+	stateAtSend SendTimeState
+}
+
+// MaxAckHeightTracker is part of the BandwidthSampler. It is called after every
+// ack event to keep track the degree of ack aggregation(a.k.a "ack height").
+type MaxAckHeightTracker struct {
+
+	// Tracks the maximum number of bytes acked faster than the estimated
+	// bandwidth.
+	// maxAckHeightFilter *utils.WindowedFilter[]
+	// The time this aggregation started and the number of bytes acked during it.
+	aggregationEpochStartTime time.Time
+	aggregationEpochBytes     protocol.ByteCount
+	// The last sent packet number before the current aggregation epoch started.
+	lastSentPacketNumberBeforeEpoch protocol.PacketNumber
+	// The number of ack aggregation epochs ever started, including the ongoing
+	// one. Stats only.
+	numAckAggregationEpochs                uint64
+	ackAggregationBandwidthThreshold       float64
+	startNewAggregationEpochAfterFullRound bool
+	reduceExtraAckedOnBandwidthIncrease    bool
+}
+
+// AckPoint represents a point on the ack line.
+type AckPoint struct {
+	ackTime         time.Time
+	totalBytesAcked protocol.ByteCount
+}
+
+// RecentAckPoints maintains the most recent 2 ack points at distinct times.
+type RecentAckPoints struct {
+	ackPoints [2]AckPoint
 }
 
 // ConnectionStateOnSentPacket represents the information about a sent packet
@@ -47,25 +102,6 @@ type ConnectionStateOnSentPacket struct {
 	// Send time states that are returned to the congestion controller when the
 	// packet is acked or lost.
 	sendTimeState SendTimeState
-}
-
-// BandwidthSample
-type BandwidthSample struct {
-	// The bandwidth at that particular sample. Zero if no valid bandwidth sample
-	// is available.
-	bandwidth Bandwidth
-	// The RTT measurement at this particular sample.  Zero if no RTT sample is
-	// available.  Does not correct for delayed ack time.
-	rtt time.Duration
-	// States captured when the packet was sent.
-	stateAtSend SendTimeState
-}
-
-func NewBandwidthSample() *BandwidthSample {
-	return &BandwidthSample{
-		// FIXME: the default value of original code is zero.
-		rtt: infRTT,
-	}
 }
 
 // BandwidthSampler keeps track of sent and acknowledged packets and outputs a
@@ -153,220 +189,49 @@ func NewBandwidthSample() *BandwidthSample {
 type BandwidthSampler struct {
 	// The total number of congestion controlled bytes sent during the connection.
 	totalBytesSent protocol.ByteCount
+
 	// The total number of congestion controlled bytes which were acknowledged.
 	totalBytesAcked protocol.ByteCount
+
 	// The total number of congestion controlled bytes which were lost.
 	totalBytesLost protocol.ByteCount
-	// The value of |totalBytesSent| at the time the last acknowledged packet
-	// was sent. Valid only when |lastAckedPacketSentTime| is valid.
+
+	// The total number of congestion controlled bytes which have been neutered.
+	totalBytesNeutered protocol.ByteCount
+
+	// The value of |total_bytes_sent_| at the time the last acknowledged packet
+	// was sent. Valid only when |last_acked_packet_sent_time_| is valid.
 	totalBytesSentAtLastAckedPacket protocol.ByteCount
+
 	// The time at which the last acknowledged packet was sent. Set to
 	// QuicTime::Zero() if no valid timestamp is available.
 	lastAckedPacketSentTime time.Time
+
 	// The time at which the most recent packet was acknowledged.
 	lastAckedPacketAckTime time.Time
+
 	// The most recently sent packet.
-	lastSendPacket protocol.PacketNumber
-	// Indicates whether the bandwidth sampler is currently in an app-limited
-	// phase.
-	isAppLimited bool
-	// The packet that will be acknowledged after this one will cause the sampler
-	// to exit the app-limited phase.
-	endOfAppLimitedPhase protocol.PacketNumber
+	lastSentPacket protocol.PacketNumber
+
+	// The most recently acked packet.
+	lastAckedPacket protocol.PacketNumber
+
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
-	connectionStats *ConnectionStates
-}
+	// PacketNumberIndexedQueue<ConnectionStateOnSentPacket> connection_state_map_;
 
-func NewBandwidthSampler() *BandwidthSampler {
-	return &BandwidthSampler{
-		connectionStats: &ConnectionStates{
-			stats: make(map[protocol.PacketNumber]*ConnectionStateOnSentPacket),
-		},
-	}
-}
+	// RecentAckPoints recent_ack_points_;
+	// quiche::QuicheCircularDeque<AckPoint> a0_candidates_;
 
-// OnPacketSent Inputs the sent packet information into the sampler. Assumes that all
-// packets are sent in order. The information about the packet will not be
-// released from the sampler until it the packet is either acknowledged or
-// declared lost.
-func (s *BandwidthSampler) OnPacketSent(sentTime time.Time, lastSentPacket protocol.PacketNumber, sentBytes, bytesInFlight protocol.ByteCount, hasRetransmittableData bool) {
-	s.lastSendPacket = lastSentPacket
+	// Maximum number of tracked packets.
+	maxTrackedPackets protocol.ByteCount
 
-	if !hasRetransmittableData {
-		return
-	}
+	maxAckHeightTracker              MaxAckHeightTracker
+	totalBytesAckedAfterLastAckEvent protocol.ByteCount
 
-	s.totalBytesSent += sentBytes
+	// True if connection option 'BSAO' is set.
+	overestimateAvoidance bool
 
-	// If there are no packets in flight, the time at which the new transmission
-	// opens can be treated as the A_0 point for the purpose of bandwidth
-	// sampling. This underestimates bandwidth to some extent, and produces some
-	// artificially low samples for most packets in flight, but it provides with
-	// samples at important points where we would not have them otherwise, most
-	// importantly at the beginning of the connection.
-	if bytesInFlight == 0 {
-		s.lastAckedPacketAckTime = sentTime
-		s.totalBytesSentAtLastAckedPacket = s.totalBytesSent
-
-		// In this situation ack compression is not a concern, set send rate to
-		// effectively infinite.
-		s.lastAckedPacketSentTime = sentTime
-	}
-
-	s.connectionStats.Insert(lastSentPacket, sentTime, sentBytes, s)
-}
-
-// OnPacketAcked Notifies the sampler that the |lastAckedPacket| is acknowledged. Returns a
-// bandwidth sample. If no bandwidth sample is available,
-// QuicBandwidth::Zero() is returned.
-func (s *BandwidthSampler) OnPacketAcked(ackTime time.Time, lastAckedPacket protocol.PacketNumber) *BandwidthSample {
-	sentPacketState := s.connectionStats.Get(lastAckedPacket)
-	if sentPacketState == nil {
-		return NewBandwidthSample()
-	}
-
-	sample := s.onPacketAckedInner(ackTime, lastAckedPacket, sentPacketState)
-	s.connectionStats.Remove(lastAckedPacket)
-
-	return sample
-}
-
-// onPacketAckedInner Handles the actual bandwidth calculations, whereas the outer method handles
-// retrieving and removing |sentPacket|.
-func (s *BandwidthSampler) onPacketAckedInner(ackTime time.Time, lastAckedPacket protocol.PacketNumber, sentPacket *ConnectionStateOnSentPacket) *BandwidthSample {
-	s.totalBytesAcked += sentPacket.size
-
-	s.totalBytesSentAtLastAckedPacket = sentPacket.sendTimeState.totalBytesSent
-	s.lastAckedPacketSentTime = sentPacket.sendTime
-	s.lastAckedPacketAckTime = ackTime
-
-	// Exit app-limited phase once a packet that was sent while the connection is
-	// not app-limited is acknowledged.
-	if s.isAppLimited && lastAckedPacket > s.endOfAppLimitedPhase {
-		s.isAppLimited = false
-	}
-
-	// There might have been no packets acknowledged at the moment when the
-	// current packet was sent. In that case, there is no bandwidth sample to
-	// make.
-	if sentPacket.lastAckedPacketSentTime.IsZero() {
-		return NewBandwidthSample()
-	}
-
-	// Infinite rate indicates that the sampler is supposed to discard the
-	// current send rate sample and use only the ack rate.
-	sendRate := infBandwidth
-	if sentPacket.sendTime.After(sentPacket.lastAckedPacketSentTime) {
-		sendRate = BandwidthFromDelta(sentPacket.sendTimeState.totalBytesSent-sentPacket.totalBytesSentAtLastAckedPacket, sentPacket.sendTime.Sub(sentPacket.lastAckedPacketSentTime))
-	}
-
-	// During the slope calculation, ensure that ack time of the current packet is
-	// always larger than the time of the previous packet, otherwise division by
-	// zero or integer underflow can occur.
-	if !ackTime.After(sentPacket.lastAckedPacketAckTime) {
-		// TODO(wub): Compare this code count before and after fixing clock jitter
-		// issue.
-		// if sentPacket.lastAckedPacketAckTime.Equal(sentPacket.sendTime) {
-		// This is the 1st packet after quiescense.
-		// QUIC_CODE_COUNT_N(quic_prev_ack_time_larger_than_current_ack_time, 1, 2);
-		// } else {
-		//   QUIC_CODE_COUNT_N(quic_prev_ack_time_larger_than_current_ack_time, 2, 2);
-		// }
-
-		return NewBandwidthSample()
-	}
-
-	ackRate := BandwidthFromDelta(s.totalBytesAcked-sentPacket.sendTimeState.totalBytesAcked,
-		ackTime.Sub(sentPacket.lastAckedPacketAckTime))
-
-	// Note: this sample does not account for delayed acknowledgement time.  This
-	// means that the RTT measurements here can be artificially high, especially
-	// on low bandwidth connections.
-	sample := &BandwidthSample{
-		bandwidth: utils.Min(sendRate, ackRate),
-		rtt:       ackTime.Sub(sentPacket.sendTime),
-	}
-
-	SentPacketToSendTimeState(sentPacket, &sample.stateAtSend)
-	return sample
-}
-
-// OnPacketLost Informs the sampler that a packet is considered lost and it should no
-// longer keep track of it.
-func (s *BandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber) SendTimeState {
-	ok, sentPacket := s.connectionStats.Remove(packetNumber)
-	sendTimeState := SendTimeState{
-		isValid: ok,
-	}
-	if sentPacket != nil {
-		s.totalBytesLost += sentPacket.size
-		SentPacketToSendTimeState(sentPacket, &sendTimeState)
-	}
-
-	return sendTimeState
-}
-
-// OnAppLimited Informs the sampler that the connection is currently app-limited, causing
-// the sampler to enter the app-limited phase.  The phase will expire by
-// itself.
-func (s *BandwidthSampler) OnAppLimited() {
-	s.isAppLimited = true
-	s.endOfAppLimitedPhase = s.lastSendPacket
-}
-
-// SentPacketToSendTimeState Copy a subset of the (private) ConnectionStateOnSentPacket to the (public)
-// SendTimeState. Always set send_time_state->is_valid to true.
-func SentPacketToSendTimeState(sentPacket *ConnectionStateOnSentPacket, sendTimeState *SendTimeState) {
-	sendTimeState.isAppLimited = sentPacket.sendTimeState.isAppLimited
-	sendTimeState.totalBytesSent = sentPacket.sendTimeState.totalBytesSent
-	sendTimeState.totalBytesAcked = sentPacket.sendTimeState.totalBytesAcked
-	sendTimeState.totalBytesLost = sentPacket.sendTimeState.totalBytesLost
-	sendTimeState.isValid = true
-}
-
-// ConnectionStates Record of the connection state at the point where each packet in flight was
-// sent, indexed by the packet number.
-// FIXME: using LinkedList replace map to fast remove all the packets lower than the specified packet number.
-type ConnectionStates struct {
-	stats map[protocol.PacketNumber]*ConnectionStateOnSentPacket
-}
-
-func (s *ConnectionStates) Insert(packetNumber protocol.PacketNumber, sentTime time.Time, bytes protocol.ByteCount, sampler *BandwidthSampler) bool {
-	if _, ok := s.stats[packetNumber]; ok {
-		return false
-	}
-
-	s.stats[packetNumber] = NewConnectionStateOnSentPacket(packetNumber, sentTime, bytes, sampler)
-	return true
-}
-
-func (s *ConnectionStates) Get(packetNumber protocol.PacketNumber) *ConnectionStateOnSentPacket {
-	return s.stats[packetNumber]
-}
-
-func (s *ConnectionStates) Remove(packetNumber protocol.PacketNumber) (bool, *ConnectionStateOnSentPacket) {
-	state, ok := s.stats[packetNumber]
-	if ok {
-		delete(s.stats, packetNumber)
-	}
-	return ok, state
-}
-
-func NewConnectionStateOnSentPacket(packetNumber protocol.PacketNumber, sentTime time.Time, bytes protocol.ByteCount, sampler *BandwidthSampler) *ConnectionStateOnSentPacket {
-	return &ConnectionStateOnSentPacket{
-		packetNumber:                    packetNumber,
-		sendTime:                        sentTime,
-		size:                            bytes,
-		lastAckedPacketSentTime:         sampler.lastAckedPacketSentTime,
-		lastAckedPacketAckTime:          sampler.lastAckedPacketAckTime,
-		totalBytesSentAtLastAckedPacket: sampler.totalBytesSentAtLastAckedPacket,
-		sendTimeState: SendTimeState{
-			isValid:         true,
-			isAppLimited:    sampler.isAppLimited,
-			totalBytesSent:  sampler.totalBytesSent,
-			totalBytesAcked: sampler.totalBytesAcked,
-			totalBytesLost:  sampler.totalBytesLost,
-		},
-	}
+	// True if connection option 'BBRB' is set.
+	limitMaxAckHeightTrackerBySendRate bool
 }

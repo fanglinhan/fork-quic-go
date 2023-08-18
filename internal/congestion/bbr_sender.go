@@ -79,15 +79,13 @@ const (
 	bbrRecoveryStateGrowth
 )
 
-type forwardCount uint64
-
 type bbrSender struct {
 	rttStats *utils.RTTStats
 
 	mode bbrMode
 
 	// The number of the round trips that have occurred during the connection.
-	roundTripCount forwardCount
+	roundTripCount RoundTripCount
 
 	// The packet number of the most recently sent packet.
 	lastSendPacket protocol.PacketNumber
@@ -96,14 +94,14 @@ type bbrSender struct {
 	currentRoundTripEnd protocol.PacketNumber
 
 	// Number of congestion events with some losses, in the current round.
-	numLossEventsInRound forwardCount
+	numLossEventsInRound uint64
 
 	// Number of total bytes lost in the current round.
 	bytesLostInRound protocol.ByteCount
 
 	// The filter that tracks the maximum bandwidth over the multiple recent
 	// round-trips.
-	maxBandwidth *utils.WindowedFilter[Bandwidth, forwardCount]
+	maxBandwidth *utils.WindowedFilter[Bandwidth, RoundTripCount]
 
 	// Minimum RTT estimate.  Automatically expires within 10 seconds (and
 	// triggers PROBE_RTT mode) if no new value is sampled during that period.
@@ -144,7 +142,7 @@ type bbrSender struct {
 	// quic_bbr_cwnd_gain flag.
 	congestionWindowGainConstant float64
 	// The number of RTTs to stay in STARTUP mode.  Defaults to 3.
-	numStartupRtts forwardCount
+	numStartupRtts uint64
 
 	// Number of round-trips in PROBE_BW mode, used for determining the current
 	// pacing gain cycle.

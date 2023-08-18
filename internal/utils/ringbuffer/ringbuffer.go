@@ -62,6 +62,20 @@ func (r *RingBuffer[T]) PopFront() T {
 	return t
 }
 
+func (r *RingBuffer[T]) Front() T {
+	if r.Empty() {
+		panic("github.com/quic-go/quic-go/internal/utils/ringbuffer: front from an empty queue")
+	}
+	return r.ring[r.headPos]
+}
+
+func (r *RingBuffer[T]) Back() T {
+	if r.Empty() {
+		panic("github.com/quic-go/quic-go/internal/utils/ringbuffer: back from an empty queue")
+	}
+	return r.ring[r.tailPos]
+}
+
 // Grow the maximum size of the queue.
 // This method assume the queue is full.
 func (r *RingBuffer[T]) grow() {
