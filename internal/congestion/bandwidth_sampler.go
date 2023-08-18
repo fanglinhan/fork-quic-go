@@ -75,6 +75,12 @@ type maxAckHeightTracker struct {
 	reduceExtraAckedOnBandwidthIncrease    bool
 }
 
+func newMaxAckHeightTracker() *maxAckHeightTracker {
+	return &maxAckHeightTracker{
+		maxAckHeightFilter: utils.NewWindowedFilter[extraAckedEvent, roundTripCount](0, maxExtraAckedEventFunc),
+	}
+}
+
 func (m *maxAckHeightTracker) Get() protocol.ByteCount {
 	return m.maxAckHeightFilter.GetBest().extraAcked
 }
@@ -308,6 +314,35 @@ type connectionStateOnSentPacket struct {
 // up until an ack for a packet that was sent after OnAppLimited() was called.
 // Note that while the scenario above is not the only scenario when the
 // connection is app-limited, the approach works in other cases too.
+
+type congestionEventSample struct {
+	// The maximum bandwidth sample from all acked packets.
+	// QuicBandwidth::Zero() if no samples are available.
+	sampleMaxBandwidth Bandwidth
+	// Whether |sample_max_bandwidth| is from a app-limited sample.
+	sampleIsAppLimited bool
+	// The minimum rtt sample from all acked packets.
+	// QuicTime::Delta::Infinite() if no samples are available.
+	SampleRtt time.Duration
+	// For each packet p in acked packets, this is the max value of INFLIGHT(p),
+	// where INFLIGHT(p) is the number of bytes acked while p is inflight.
+	sampleMaxInflight protocol.ByteCount
+	// The send state of the largest packet in acked_packets, unless it is
+	// empty. If acked_packets is empty, it's the send state of the largest
+	// packet in lost_packets.
+	lastPacketSendState sendTimeState
+	// The number of extra bytes acked from this ack event, compared to what is
+	// expected from the flow's bandwidth. Larger value means more ack
+	// aggregation.
+	extraAcked protocol.ByteCount
+}
+
+func newCongestionEventSample() *congestionEventSample {
+	return &congestionEventSample{
+		SampleRtt: infRTT,
+	}
+}
+
 type bandwidthSampler struct {
 	// The total number of congestion controlled bytes sent during the connection.
 	totalBytesSent protocol.ByteCount
