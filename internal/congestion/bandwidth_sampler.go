@@ -159,32 +159,36 @@ func (m *MaxAckHeightTracker) Update(
 	return extraBytesAcked
 }
 
-func (m *MaxAckHeightTracker) SetFilterWindowLength() {
-
+func (m *MaxAckHeightTracker) SetFilterWindowLength(length RoundTripCount) {
+	m.maxAckHeightFilter.SetWindowLength(length)
 }
 
-func (m *MaxAckHeightTracker) Reset() {
-
+func (m *MaxAckHeightTracker) Reset(newHeight protocol.ByteCount, newTime RoundTripCount) {
+	newEvent := ExtraAckedEvent{
+		extraAcked: newHeight,
+		round:      newTime,
+	}
+	m.maxAckHeightFilter.Reset(newEvent, newTime)
 }
 
-func (m *MaxAckHeightTracker) SetAckAggregationBandwidthThreshold() {
-
+func (m *MaxAckHeightTracker) SetAckAggregationBandwidthThreshold(threshold float64) {
+	m.ackAggregationBandwidthThreshold = threshold
 }
 
-func (m *MaxAckHeightTracker) SetStartNewAggregationEpochAfterFullRound() {
-
+func (m *MaxAckHeightTracker) SetStartNewAggregationEpochAfterFullRound(value bool) {
+	m.startNewAggregationEpochAfterFullRound = value
 }
 
-func (m *MaxAckHeightTracker) SetReduceExtraAckedOnBandwidthIncrease() {
-
+func (m *MaxAckHeightTracker) SetReduceExtraAckedOnBandwidthIncrease(value bool) {
+	m.reduceExtraAckedOnBandwidthIncrease = value
 }
 
-func (m *MaxAckHeightTracker) AckAggregationBandwidthThreshold() {
-
+func (m *MaxAckHeightTracker) AckAggregationBandwidthThreshold() float64 {
+	return m.ackAggregationBandwidthThreshold
 }
 
-func (m *MaxAckHeightTracker) NumAckAggregationEpochs() {
-
+func (m *MaxAckHeightTracker) NumAckAggregationEpochs() uint64 {
+	return m.numAckAggregationEpochs
 }
 
 // AckPoint represents a point on the ack line.
