@@ -404,7 +404,12 @@ func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwi
 }
 
 func (b *bandwidthSampler) EnableOverestimateAvoidance() {
+	if b.overestimateAvoidance {
+		return
+	}
 
+	b.overestimateAvoidance = true
+	b.maxAckHeightTracker.SetAckAggregationBandwidthThreshold(2.0)
 }
 
 func (b *bandwidthSampler) RemoveObsoletePackets() {
@@ -423,22 +428,22 @@ func (b *bandwidthSampler) OnPacketAcked() {
 
 }
 
+func (b *bandwidthSampler) TotalBytesSent() protocol.ByteCount {
+	return b.totalBytesSent
+}
+
+func (b *bandwidthSampler) TotalBytesLost() protocol.ByteCount {
+	return b.totalBytesLost
+}
+
+func (b *bandwidthSampler) TotalBytesAcked() protocol.ByteCount {
+	return b.totalBytesAcked
+}
+
 func (b *bandwidthSampler) chooseA0Point() {
 
 }
 
 func (b *bandwidthSampler) sentPacketToSendTimeState() {
-
-}
-
-func (b *bandwidthSampler) TotalBytesSent() {
-
-}
-
-func (b *bandwidthSampler) TotalBytesLost() {
-
-}
-
-func (b *bandwidthSampler) TotalBytesAcked() {
 
 }
