@@ -392,3 +392,53 @@ type bandwidthSampler struct {
 	// True if connection option 'BBRB' is set.
 	limitMaxAckHeightTrackerBySendRate bool
 }
+
+func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwidthSampler {
+	b := &bandwidthSampler{
+		maxAckHeightTracker: *newMaxAckHeightTracker(),
+	}
+
+	b.maxAckHeightTracker.SetFilterWindowLength(maxAckHeightTrackerWindowLength)
+
+	return b
+}
+
+func (b *bandwidthSampler) EnableOverestimateAvoidance() {
+
+}
+
+func (b *bandwidthSampler) RemoveObsoletePackets() {
+
+}
+
+func (b *bandwidthSampler) OnPacketSent() {
+
+}
+
+func (b *bandwidthSampler) OnPacketLost() {
+
+}
+
+func (b *bandwidthSampler) OnPacketAcked() {
+
+}
+
+func (b *bandwidthSampler) chooseA0Point() {
+
+}
+
+func (b *bandwidthSampler) sentPacketToSendTimeState() {
+
+}
+
+func (b *bandwidthSampler) TotalBytesSent() {
+
+}
+
+func (b *bandwidthSampler) TotalBytesLost() {
+
+}
+
+func (b *bandwidthSampler) TotalBytesAcked() {
+
+}
