@@ -317,6 +317,36 @@ func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 	return protocol.MaxByteCount
 }
 
+func (b *bbrSender) hasGoodBandwidthEstimateForResumption() bool {
+	return b.hasNonAppLimitedSample()
+}
+
+func (b *bbrSender) hasNonAppLimitedSample() bool {
+	return b.hasNoAppLimitedSample
+}
+
+// Sets the pacing gain used in STARTUP.  Must be greater than 1.
+func (b *bbrSender) setHighGain(highGain float64) {
+	b.highGain = highGain
+	if b.mode == bbrModeStartup {
+		b.pacingGain = highGain
+	}
+}
+
+// Sets the CWND gain used in STARTUP.  Must be greater than 1.
+func (b *bbrSender) setHighCwndGain(highCwndGain float64) {
+
+	b.highCwndGain = highCwndGain
+	if b.mode == bbrModeStartup {
+		b.congestionWindowGain = highCwndGain
+	}
+}
+
+// Sets the gain used in DRAIN.  Must be less than 1.
+func (b *bbrSender) setDrainGain(drainGain float64) {
+	b.drainGain = drainGain
+}
+
 // What's the current estimated bandwidth in bytes per second.
 func (b *bbrSender) bandwidthEstimate() Bandwidth {
 	return Bandwidth(b.maxBandwidth.GetBest())
