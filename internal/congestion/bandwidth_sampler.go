@@ -403,6 +403,14 @@ func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwi
 	return b
 }
 
+func (b *bandwidthSampler) MaxAckHeight() protocol.ByteCount {
+	return b.maxAckHeightTracker.Get()
+}
+
+func (b *bandwidthSampler) NumAckAggregationEpochs() uint64 {
+	return b.maxAckHeightTracker.NumAckAggregationEpochs()
+}
+
 func (b *bandwidthSampler) EnableOverestimateAvoidance() {
 	if b.overestimateAvoidance {
 		return

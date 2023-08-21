@@ -84,6 +84,10 @@ type bbrSender struct {
 
 	mode bbrMode
 
+	// Bandwidth sampler provides BBR with the bandwidth measurements at
+	// individual points.
+	sampler bandwidthSampler
+
 	// The number of the round trips that have occurred during the connection.
 	roundTripCount roundTripCount
 
@@ -230,7 +234,27 @@ func NewBbrSender(
 	initialMaxDatagramSize protocol.ByteCount,
 	tracer logging.ConnectionTracer,
 ) *bbrSender {
-	return &bbrSender{}
+	return newBbrSender(
+		clock,
+		rttStats,
+		initialMaxDatagramSize,
+		initialCongestionWindow*initialMaxDatagramSize,
+		protocol.MaxCongestionWindowPackets*initialMaxDatagramSize,
+		tracer,
+	)
+}
+
+func newBbrSender(
+	clock Clock,
+	rttStats *utils.RTTStats,
+	initialMaxDatagramSize,
+	initialCongestionWindow,
+	initialMaxCongestionWindow protocol.ByteCount,
+	tracer logging.ConnectionTracer,
+) *bbrSender {
+	b := &bbrSender{}
+
+	return b
 }
 
 // TimeUntilSend implements the SendAlgorithm interface.
@@ -364,21 +388,76 @@ func (b *bbrSender) probeRttCongestionWindow() protocol.ByteCount {
 // QuicByteCount UpdateAckAggregationBytes(QuicTime ack_time, QuicByteCount newly_acked_bytes);
 
 // Determines the appropriate pacing rate for the connection.
-func (b *bbrSender) calculatePacingRate() {
+func (b *bbrSender) calculatePacingRate(bytesLost protocol.ByteCount) {
+	if b.bandwidthEstimate() == 0 {
+		return
+	}
 
+	targetRate := b.pacingGain * float64(b.bandwidthEstimate())
+	if b.isAtFullBandwidth {
+		b.pacingRate = Bandwidth(targetRate)
+		return
+	}
+
+	// Pace at the rate of initial_window / RTT as soon as RTT measurements are
+	// available.
+	if b.pacingRate == 0 && b.rttStats.MinRTT() != 0 {
+		b.pacingRate = BandwidthFromDelta(b.initialCongestionWindow, b.rttStats.MinRTT())
+		return
+	}
+
+	if b.detectOvershooting {
+		b.bytesLostWhileDetectingOvershooting += bytesLost
+		// Check for overshooting with network parameters adjusted when pacing rate
+		// > target_rate and loss has been detected.
+		if b.pacingRate > Bandwidth(targetRate) && b.bytesLostWhileDetectingOvershooting > 0 {
+			if b.hasNoAppLimitedSample ||
+				b.bytesLostWhileDetectingOvershooting*protocol.ByteCount(b.bytesLostMultiplierWhileDetectingOvershooting) > b.initialCongestionWindow {
+				// We are fairly sure overshoot happens if 1) there is at least one
+				// non app-limited bw sample or 2) half of IW gets lost. Slow pacing
+				// rate.
+				b.pacingRate = utils.Max(Bandwidth(targetRate), BandwidthFromDelta(b.cwndToCalculateMinPacingRate, b.rttStats.MinRTT()))
+				b.bytesLostWhileDetectingOvershooting = 0
+				b.detectOvershooting = false
+			}
+		}
+	}
+
+	// Do not decrease the pacing rate during startup.
+	b.pacingRate = utils.Max(b.pacingRate, Bandwidth(targetRate))
 }
 
 // Determines the appropriate congestion window for the connection.
-func (b *bbrSender) calculateCongestionWindow(ackedBytes, excessAcked, priorInFlight protocol.ByteCount) {
+func (b *bbrSender) calculateCongestionWindow(bytesAcked, excessAcked protocol.ByteCount) {
 	if b.mode == bbrModeProbeRtt {
 		return
 	}
 
-	// targetWindow := b.getTargetCongestionWindow(b.congestionWindowGain)
+	targetWindow := b.getTargetCongestionWindow(b.congestionWindowGain)
 	if b.isAtFullBandwidth {
-		// targetWindow +=
+		// Add the max recently measured ack aggregation to CWND.
+		targetWindow += b.sampler.MaxAckHeight()
+	} else if b.enableAckAggregationDuringStartup {
+		// Add the most recent excess acked.  Because CWND never decreases in
+		// STARTUP, this will automatically create a very localized max filter.
+		targetWindow += excessAcked
 	}
 
+	// Instead of immediately setting the target CWND as the new one, BBR grows
+	// the CWND towards |target_window| by only increasing it |bytes_acked| at a
+	// time.
+	if b.isAtFullBandwidth {
+		b.congestionWindow = utils.Min(targetWindow, b.congestionWindow+bytesAcked)
+	} else if b.congestionWindow < targetWindow ||
+		b.sampler.TotalBytesAcked() < b.initialCongestionWindow {
+		// If the connection is not yet out of startup phase, do not decrease the
+		// window.
+		b.congestionWindow = b.congestionWindow + bytesAcked
+	}
+
+	// Enforce the limits on the congestion window.
+	b.congestionWindow = utils.Max(b.congestionWindow, b.minCongestionWindow)
+	b.congestionWindow = utils.Min(b.congestionWindow, b.maxCongestionWindow)
 }
 
 // Determines the appropriate window that constrains the in-flight during recovery.
