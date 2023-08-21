@@ -291,7 +291,7 @@ func (b *bbrSender) OnPacketSent(
 		b.exitingQuiescence = true
 	}
 
-	// b.sampler.OnPacketSent(sentTime, bytesInFlight, )
+	b.sampler.OnPacketSent(sentTime, bytesInFlight, packetNumber, bytes, isRetransmittable)
 }
 
 // CanSend implements the SendAlgorithm interface.
@@ -316,7 +316,7 @@ func (b *bbrSender) OnPacketLost(number protocol.PacketNumber, lostBytes protoco
 
 // OnRetransmissionTimeout implements the SendAlgorithm interface.
 func (b *bbrSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
-
+	// Do nothing
 }
 
 // SetMaxDatagramSize implements the SendAlgorithm interface.
