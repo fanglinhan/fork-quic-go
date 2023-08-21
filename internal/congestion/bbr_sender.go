@@ -1,6 +1,7 @@
 package congestion
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
@@ -273,7 +274,7 @@ func (b *bbrSender) TimeUntilSend(bytesInFlight protocol.ByteCount) time.Time {
 
 // HasPacingBudget implements the SendAlgorithm interface.
 func (b *bbrSender) HasPacingBudget(now time.Time) bool {
-	return false
+	return true
 }
 
 // OnPacketSent implements the SendAlgorithm interface.
@@ -283,12 +284,12 @@ func (b *bbrSender) OnPacketSent(sentTime time.Time, bytesInFlight protocol.Byte
 
 // CanSend implements the SendAlgorithm interface.
 func (b *bbrSender) CanSend(bytesInFlight protocol.ByteCount) bool {
-	return false
+	return bytesInFlight < b.GetCongestionWindow()
 }
 
 // MaybeExitSlowStart implements the SendAlgorithm interface.
 func (b *bbrSender) MaybeExitSlowStart() {
-
+	// Do nothing
 }
 
 // OnPacketAcked implements the SendAlgorithm interface.
@@ -307,23 +308,38 @@ func (b *bbrSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
 }
 
 // SetMaxDatagramSize implements the SendAlgorithm interface.
-func (b *bbrSender) SetMaxDatagramSize(protocol.ByteCount) {
-
+func (b *bbrSender) SetMaxDatagramSize(s protocol.ByteCount) {
+	if s < b.maxDatagramSize {
+		panic(fmt.Sprintf("congestion BUG: decreased max datagram size from %d to %d", b.maxDatagramSize, s))
+	}
+	cwndIsMinCwnd := b.congestionWindow == b.minCongestionWindow
+	b.maxDatagramSize = s
+	if cwndIsMinCwnd {
+		b.congestionWindow = b.minCongestionWindow
+	}
 }
 
 // InSlowStart implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) InSlowStart() bool {
-	return false
+	return b.mode == bbrModeStartup
 }
 
 // InRecovery implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) InRecovery() bool {
-	return false
+	return b.recoveryState != bbrRecoveryStateNotInRecovery
 }
 
 // GetCongestionWindow implements the SendAlgorithmWithDebugInfos interface.
 func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
-	return protocol.MaxByteCount
+	if b.mode == bbrModeProbeRtt {
+		return b.probeRttCongestionWindow()
+	}
+
+	if b.InRecovery() {
+		return utils.Min(b.congestionWindow, b.recoveryWindow)
+	}
+
+	return b.congestionWindow
 }
 
 func (b *bbrSender) hasGoodBandwidthEstimateForResumption() bool {
