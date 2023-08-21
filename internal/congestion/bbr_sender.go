@@ -82,6 +82,8 @@ const (
 type bbrSender struct {
 	rttStats *utils.RTTStats
 
+	rand utils.Rand
+
 	mode bbrMode
 
 	// Bandwidth sampler provides BBR with the bandwidth measurements at
@@ -220,6 +222,9 @@ type bbrSender struct {
 
 	// Params.
 	maxDatagramSize protocol.ByteCount
+	// Custom.
+	// Recorded on packet sent.
+	bytesInFlight protocol.ByteCount
 }
 
 var (
@@ -382,31 +387,162 @@ func (b *bbrSender) probeRttCongestionWindow() protocol.ByteCount {
 	return b.minCongestionWindow
 }
 
-// bool MaybeUpdateMinRtt(QuicTime now, QuicTime::Delta sample_min_rtt);
+func (b *bbrSender) maybeUpdateMinRtt(now time.Time, sampleMinRtt time.Duration) bool {
+	// Do not expire min_rtt if none was ever available.
+	minRttExpired := b.minRtt != 0 && now.After(b.minRttTimestamp.Add(minRttExpiry))
+	if minRttExpired || sampleMinRtt < b.minRtt || b.minRtt == 0 {
+		b.minRtt = sampleMinRtt
+		b.minRttTimestamp = now
+	}
+
+	return minRttExpired
+}
 
 // Enters the STARTUP mode.
-// void EnterStartupMode(QuicTime now);
+func (b *bbrSender) enterStartupMode(now time.Time) {
+	b.mode = bbrModeStartup
+	b.pacingGain = b.highGain
+	b.congestionWindowGain = b.highCwndGain
+}
 
 // Enters the PROBE_BW mode.
-// void EnterProbeBandwidthMode(QuicTime now);
+func (b *bbrSender) enterProbeBandwidthMode(now time.Time) {
+	b.mode = bbrModeProbeBw
+	b.congestionWindowGain = b.congestionWindowGainConstant
+
+	// Pick a random offset for the gain cycle out of {0, 2..7} range. 1 is
+	// excluded because in that case increased gain and decreased gain would not
+	// follow each other.
+	b.cycleCurrentOffset = int(b.rand.Int31n(protocol.PacketsPerConnectionID)) % (gainCycleLength - 1)
+	if b.cycleCurrentOffset >= 1 {
+		b.cycleCurrentOffset += 1
+	}
+
+	b.lastCycleStart = now
+	b.pacingGain = pacingGain[b.cycleCurrentOffset]
+}
 
 // Updates the round-trip counter if a round-trip has passed.  Returns true if
 // the counter has been advanced.
-// bool UpdateRoundTripCounter(QuicPacketNumber last_acked_packet);
+func (b *bbrSender) updateRoundTripCounter(lastAckedPacket protocol.PacketNumber) bool {
+	if b.currentRoundTripEnd == protocol.InvalidPacketNumber || lastAckedPacket > b.currentRoundTripEnd {
+		b.roundTripCount++
+		b.currentRoundTripEnd = b.lastSendPacket
+		return true
+	}
+	return false
+}
 
 // Updates the current gain used in PROBE_BW mode.
-// void UpdateGainCyclePhase(QuicTime now, QuicByteCount prior_in_flight, bool has_losses);
+func (b *bbrSender) updateGainCyclePhase(now time.Time, priorInFlight protocol.ByteCount, hasLosses bool) {
+	// In most cases, the cycle is advanced after an RTT passes.
+	shouldAdvanceGainCycling := time.Now().After(b.lastCycleStart.Add(b.getMinRtt()))
+	// If the pacing gain is above 1.0, the connection is trying to probe the
+	// bandwidth by increasing the number of bytes in flight to at least
+	// pacing_gain * BDP.  Make sure that it actually reaches the target, as long
+	// as there are no losses suggesting that the buffers are not able to hold
+	// that much.
+	if b.pacingGain > 1.0 && !hasLosses && priorInFlight < b.getTargetCongestionWindow(b.pacingGain) {
+		shouldAdvanceGainCycling = false
+	}
+
+	// If pacing gain is below 1.0, the connection is trying to drain the extra
+	// queue which could have been incurred by probing prior to it.  If the number
+	// of bytes in flight falls down to the estimated BDP value earlier, conclude
+	// that the queue has been successfully drained and exit this cycle early.
+	if b.pacingGain < 1.0 && b.bytesInFlight < b.getTargetCongestionWindow(1) {
+		shouldAdvanceGainCycling = true
+	}
+
+	if shouldAdvanceGainCycling {
+		b.cycleCurrentOffset = (b.cycleCurrentOffset + 1) % gainCycleLength
+		b.lastCycleStart = now
+		// Stay in low gain mode until the target BDP is hit.
+		// Low gain mode will be exited immediately when the target BDP is achieved.
+		if b.drainToTarget && b.pacingGain < 1 &&
+			pacingGain[b.cycleCurrentOffset] == 1 &&
+			b.bytesInFlight > b.getTargetCongestionWindow(1) {
+			return
+		}
+		b.pacingGain = pacingGain[b.cycleCurrentOffset]
+	}
+}
 
 // Tracks for how many round-trips the bandwidth has not increased
 // significantly.
-// void CheckIfFullBandwidthReached(const SendTimeState& last_packet_send_state);
+func (b *bbrSender) checkIfFullBandwidthReached(lastPacketSendState *sendTimeState) {
+	if b.lastSampleIsAppLimited {
+		return
+	}
+
+	target := float64(b.bandwidthAtLastRound) * startupGrowthTarget
+	if b.bandwidthEstimate() > Bandwidth(target) {
+		b.bandwidthAtLastRound = b.bandwidthEstimate()
+		b.roundsWithoutBandwidthGain = 0
+		if b.expireAckAggregationInStartup {
+			// Expire old excess delivery measurements now that bandwidth increased.
+			b.sampler.ResetMaxAckHeightTracker(0, b.roundTripCount)
+		}
+		return
+	}
+
+	b.roundsWithoutBandwidthGain++
+	if b.roundsWithoutBandwidthGain > int64(b.numStartupRtts) ||
+		b.shouldExitStartupDueToLoss(lastPacketSendState) {
+		b.isAtFullBandwidth = true
+	}
+}
 
 // Transitions from STARTUP to DRAIN and from DRAIN to PROBE_BW if
 // appropriate.
-// void MaybeExitStartupOrDrain(QuicTime now);
+func (b *bbrSender) maybeExitStartupOrDrain(now time.Time) {
+	if b.mode == bbrModeStartup && b.isAtFullBandwidth {
+		b.mode = bbrModeDrain
+		b.pacingGain = b.drainGain
+		b.congestionWindowGain = b.highCwndGain
+	}
+	if b.mode == bbrModeDrain && b.bytesInFlight <= b.getTargetCongestionWindow(1) {
+		b.enterProbeBandwidthMode(now)
+	}
+}
 
 // Decides whether to enter or exit PROBE_RTT.
-// void MaybeEnterOrExitProbeRtt(QuicTime now, bool is_round_start, bool min_rtt_expired);
+func (b *bbrSender) maybeEnterOrExitProbeRtt(now time.Time, isRoundStart, minRttExpired bool) {
+	if minRttExpired && !b.exitingQuiescence && b.mode != bbrModeProbeRtt {
+		b.mode = bbrModeProbeRtt
+		b.pacingGain = 1.0
+		// Do not decide on the time to exit PROBE_RTT until the |bytes_in_flight|
+		// is at the target small value.
+		b.exitProbeRttAt = time.Time{}
+	}
+
+	if b.mode == bbrModeProbeRtt {
+		if b.exitProbeRttAt.IsZero() {
+			// If the window has reached the appropriate size, schedule exiting
+			// PROBE_RTT.  The CWND during PROBE_RTT is kMinimumCongestionWindow, but
+			// we allow an extra packet since QUIC checks CWND before sending a
+			// packet.
+			if b.bytesInFlight < b.probeRttCongestionWindow()+protocol.MaxPacketBufferSize {
+				b.exitProbeRttAt = now.Add(probeRttTime)
+				b.probeRttRoundPassed = false
+			}
+		} else {
+			if isRoundStart {
+				b.probeRttRoundPassed = true
+			}
+			if now.After(b.exitProbeRttAt) && b.probeRttRoundPassed {
+				b.minRttTimestamp = now
+				if !b.isAtFullBandwidth {
+					b.enterStartupMode(now)
+				} else {
+					b.enterProbeBandwidthMode(now)
+				}
+			}
+		}
+	}
+
+	b.exitingQuiescence = false
+}
 
 // Determines whether BBR needs to enter, exit or advance state of the
 // recovery.
@@ -522,8 +658,7 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight
 	b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
 }
 
-// Called right before exiting STARTUP.
-// void OnExitStartup(QuicTime now);
-
 // Return whether we should exit STARTUP due to excessive loss.
-// bool ShouldExitStartupDueToLoss(const SendTimeState& last_packet_send_state) const;
+func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeState) bool {
+	return false
+}

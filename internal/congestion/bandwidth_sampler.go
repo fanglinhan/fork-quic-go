@@ -411,6 +411,26 @@ func (b *bandwidthSampler) NumAckAggregationEpochs() uint64 {
 	return b.maxAckHeightTracker.NumAckAggregationEpochs()
 }
 
+func (b *bandwidthSampler) SetMaxAckHeightTrackerWindowLength(length roundTripCount) {
+	b.maxAckHeightTracker.SetFilterWindowLength(length)
+}
+
+func (b *bandwidthSampler) ResetMaxAckHeightTracker(newHeight protocol.ByteCount, newTime roundTripCount) {
+	b.maxAckHeightTracker.Reset(newHeight, newTime)
+}
+
+func (b *bandwidthSampler) SetStartNewAggregationEpochAfterFullRound(value bool) {
+	b.maxAckHeightTracker.SetStartNewAggregationEpochAfterFullRound(value)
+}
+
+func (b *bandwidthSampler) SetLimitMaxAckHeightTrackerBySendRate(value bool) {
+	b.limitMaxAckHeightTrackerBySendRate = value
+}
+
+func (b *bandwidthSampler) SetReduceExtraAckedOnBandwidthIncrease(value bool) {
+	b.maxAckHeightTracker.SetReduceExtraAckedOnBandwidthIncrease(value)
+}
+
 func (b *bandwidthSampler) EnableOverestimateAvoidance() {
 	if b.overestimateAvoidance {
 		return
