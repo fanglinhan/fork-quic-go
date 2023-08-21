@@ -26,6 +26,11 @@ type sendTimeState struct {
 	totalBytesAcked protocol.ByteCount
 	// Total number of lost bytes at the time the packet was sent.
 	totalBytesLost protocol.ByteCount
+	// Total number of inflight bytes at the time the packet was sent.
+	// Includes the packet itself.
+	// It should be equal to |total_bytes_sent| minus the sum of
+	// |total_bytes_acked|, |total_bytes_lost| and total neutered bytes.
+	bytesInFlight protocol.ByteCount
 }
 
 type extraAckedEvent struct {

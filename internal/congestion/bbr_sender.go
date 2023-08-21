@@ -49,6 +49,10 @@ const (
 	// will exit the STARTUP mode.
 	startupGrowthTarget                         = 1.25
 	roundTripsWithoutGrowthBeforeExitingStartup = int64(3)
+
+	// Flag.
+	defaultStartupFullLossCount  = 8
+	quicBbr2DefaultLossThreshold = 0.02
 )
 
 type bbrMode int
@@ -546,12 +550,40 @@ func (b *bbrSender) maybeEnterOrExitProbeRtt(now time.Time, isRoundStart, minRtt
 
 // Determines whether BBR needs to enter, exit or advance state of the
 // recovery.
-// void UpdateRecoveryState(QuicPacketNumber last_acked_packet, bool has_losses, bool is_round_start);
+func (b *bbrSender) updateRecoveryState(lastAckedPacket protocol.PacketNumber, hasLosses, isRoundStart bool) {
+	// Disable recovery in startup, if loss-based exit is enabled.
+	if !b.isAtFullBandwidth {
+		return
+	}
 
-// Updates the ack aggregation max filter in bytes.
-// Returns the most recent addition to the filter, or |newly_acked_bytes| if
-// nothing was fed in to the filter.
-// QuicByteCount UpdateAckAggregationBytes(QuicTime ack_time, QuicByteCount newly_acked_bytes);
+	// Exit recovery when there are no losses for a round.
+	if hasLosses {
+		b.endRecoveryAt = b.lastSendPacket
+	}
+
+	switch b.recoveryState {
+	case bbrRecoveryStateNotInRecovery:
+		if hasLosses {
+			b.recoveryState = bbrRecoveryStateConservation
+			// This will cause the |recovery_window_| to be set to the correct
+			// value in CalculateRecoveryWindow().
+			b.recoveryWindow = 0
+			// Since the conservation phase is meant to be lasting for a whole
+			// round, extend the current round as if it were started right now.
+			b.currentRoundTripEnd = b.lastSendPacket
+		}
+	case bbrRecoveryStateConservation:
+		if isRoundStart {
+			b.recoveryState = bbrRecoveryStateGrowth
+		}
+		fallthrough
+	case bbrRecoveryStateGrowth:
+		// Exit recovery if appropriate.
+		if !hasLosses && lastAckedPacket > b.endRecoveryAt {
+			b.recoveryState = bbrRecoveryStateNotInRecovery
+		}
+	}
+}
 
 // Determines the appropriate pacing rate for the connection.
 func (b *bbrSender) calculatePacingRate(bytesLost protocol.ByteCount) {
@@ -660,5 +692,17 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight
 
 // Return whether we should exit STARTUP due to excessive loss.
 func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeState) bool {
+	if b.numLossEventsInRound < defaultStartupFullLossCount || !lastPacketSendState.isValid {
+		return false
+	}
+
+	inflightAtSend := lastPacketSendState.bytesInFlight
+
+	if inflightAtSend > 0 && b.bytesLostInRound > 0 {
+		if b.bytesLostInRound > protocol.ByteCount(float64(inflightAtSend)*quicBbr2DefaultLossThreshold) {
+			return true
+		}
+		return false
+	}
 	return false
 }
