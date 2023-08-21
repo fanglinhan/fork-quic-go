@@ -99,7 +99,7 @@ type bbrSender struct {
 	roundTripCount roundTripCount
 
 	// The packet number of the most recently sent packet.
-	lastSendPacket protocol.PacketNumber
+	lastSentPacket protocol.PacketNumber
 	// Acknowledgement of any packet after |current_round_trip_end_| will cause
 	// the round trip counter to advance.
 	currentRoundTripEnd protocol.PacketNumber
@@ -278,8 +278,20 @@ func (b *bbrSender) HasPacingBudget(now time.Time) bool {
 }
 
 // OnPacketSent implements the SendAlgorithm interface.
-func (b *bbrSender) OnPacketSent(sentTime time.Time, bytesInFlight protocol.ByteCount, packetNumber protocol.PacketNumber, bytes protocol.ByteCount, isRetransmittable bool) {
+func (b *bbrSender) OnPacketSent(
+	sentTime time.Time,
+	bytesInFlight protocol.ByteCount,
+	packetNumber protocol.PacketNumber,
+	bytes protocol.ByteCount,
+	isRetransmittable bool) {
+	b.lastSentPacket = packetNumber
+	b.bytesInFlight = bytesInFlight
 
+	if bytesInFlight == 0 {
+		b.exitingQuiescence = true
+	}
+
+	// b.sampler.OnPacketSent(sentTime, bytesInFlight, )
 }
 
 // CanSend implements the SendAlgorithm interface.
@@ -447,7 +459,7 @@ func (b *bbrSender) enterProbeBandwidthMode(now time.Time) {
 func (b *bbrSender) updateRoundTripCounter(lastAckedPacket protocol.PacketNumber) bool {
 	if b.currentRoundTripEnd == protocol.InvalidPacketNumber || lastAckedPacket > b.currentRoundTripEnd {
 		b.roundTripCount++
-		b.currentRoundTripEnd = b.lastSendPacket
+		b.currentRoundTripEnd = b.lastSentPacket
 		return true
 	}
 	return false
@@ -574,7 +586,7 @@ func (b *bbrSender) updateRecoveryState(lastAckedPacket protocol.PacketNumber, h
 
 	// Exit recovery when there are no losses for a round.
 	if hasLosses {
-		b.endRecoveryAt = b.lastSendPacket
+		b.endRecoveryAt = b.lastSentPacket
 	}
 
 	switch b.recoveryState {
@@ -586,7 +598,7 @@ func (b *bbrSender) updateRecoveryState(lastAckedPacket protocol.PacketNumber, h
 			b.recoveryWindow = 0
 			// Since the conservation phase is meant to be lasting for a whole
 			// round, extend the current round as if it were started right now.
-			b.currentRoundTripEnd = b.lastSendPacket
+			b.currentRoundTripEnd = b.lastSentPacket
 		}
 	case bbrRecoveryStateConservation:
 		if isRoundStart {

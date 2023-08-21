@@ -213,6 +213,34 @@ type recentAckPoints struct {
 	ackPoints [2]ackPoint
 }
 
+func (r *recentAckPoints) Update(ackTime time.Time, totalBytesAcked protocol.ByteCount) {
+	if ackTime.Before(r.ackPoints[1].ackTime) {
+		r.ackPoints[1].ackTime = ackTime
+	} else if ackTime.After(r.ackPoints[1].ackTime) {
+		r.ackPoints[0] = r.ackPoints[1]
+		r.ackPoints[1].ackTime = ackTime
+	}
+
+	r.ackPoints[1].totalBytesAcked = totalBytesAcked
+}
+
+func (r *recentAckPoints) Clear() {
+	r.ackPoints[0] = ackPoint{}
+	r.ackPoints[1] = ackPoint{}
+}
+
+func (r *recentAckPoints) MostRecentPoint() *ackPoint {
+	return &r.ackPoints[1]
+}
+
+func (r *recentAckPoints) LessRecentPoint() *ackPoint {
+	if r.ackPoints[0].totalBytesAcked != 0 {
+		return &r.ackPoints[0]
+	}
+
+	return &r.ackPoints[1]
+}
+
 // ConnectionStateOnSentPacket represents the information about a sent packet
 // and the state of the connection at the moment the packet was sent,
 // specifically the information about the most recently acknowledged packet at
@@ -449,8 +477,48 @@ func (b *bandwidthSampler) RemoveObsoletePackets() {
 
 }
 
-func (b *bandwidthSampler) OnPacketSent() {
+func (b *bandwidthSampler) OnPacketSent(
+	sentTime time.Time,
+	bytesInFlight protocol.ByteCount,
+	packetNumber protocol.PacketNumber,
+	bytes protocol.ByteCount,
+	isRetransmittable bool) {
+	b.lastSentPacket = packetNumber
 
+	if !isRetransmittable {
+		return
+	}
+
+	b.totalBytesSent += bytes
+
+	// If there are no packets in flight, the time at which the new transmission
+	// opens can be treated as the A_0 point for the purpose of bandwidth
+	// sampling. This underestimates bandwidth to some extent, and produces some
+	// artificially low samples for most packets in flight, but it provides with
+	// samples at important points where we would not have them otherwise, most
+	// importantly at the beginning of the connection.
+	if bytesInFlight == 0 {
+		b.lastAckedPacketAckTime = sentTime
+		if b.overestimateAvoidance {
+			b.recentAckPoints.Clear()
+			b.recentAckPoints.Update(sentTime, b.totalBytesAcked)
+			b.a0Candidates.Clear()
+			b.a0Candidates.PushBack(*b.recentAckPoints.MostRecentPoint())
+		}
+		b.totalBytesSentAtLastAckedPacket = b.totalBytesSent
+
+		// In this situation ack compression is not a concern, set send rate to
+		// effectively infinite.
+		b.lastAckedPacketSentTime = sentTime
+	}
+
+	b.connectionStateMap.Emplace(packetNumber, &connectionStateOnSentPacket{
+		packetNumber:                    packetNumber,
+		sendTime:                        sentTime,
+		size:                            bytes,
+		totalBytesSentAtLastAckedPacket: bytesInFlight + bytes,
+		// TODO.
+	})
 }
 
 func (b *bandwidthSampler) OnPacketLost() {
@@ -473,10 +541,38 @@ func (b *bandwidthSampler) TotalBytesAcked() protocol.ByteCount {
 	return b.totalBytesAcked
 }
 
-func (b *bandwidthSampler) chooseA0Point() {
+func (b *bandwidthSampler) chooseA0Point(totalBytesAcked protocol.ByteCount, a0 *ackPoint) bool {
+	if b.a0Candidates.Empty() {
+		return false
+	}
 
+	if b.a0Candidates.Len() == 1 {
+		a0 = b.a0Candidates.Front()
+		return true
+	}
+
+	for i := 1; i < b.a0Candidates.Len(); i++ {
+		if b.a0Candidates.Offset(i).totalBytesAcked > totalBytesAcked {
+			a0 = b.a0Candidates.Offset(i - 1)
+			if i > 1 {
+				for j := 0; j < i-1; j++ {
+					b.a0Candidates.PopFront()
+				}
+			}
+			return true
+		}
+	}
+
+	a0 = b.a0Candidates.Back()
+	for k := 0; k < b.a0Candidates.Len()-1; k++ {
+		b.a0Candidates.PopFront()
+	}
+	return true
 }
 
-func (b *bandwidthSampler) sentPacketToSendTimeState() {
-
+func (b *bandwidthSampler) sentPacketToSendTimeState(
+	sentPacket *connectionStateOnSentPacket,
+	sendTimeState *sendTimeState) {
+	*sendTimeState = *&sentPacket.sendTimeState
+	sendTimeState.isValid = true
 }
