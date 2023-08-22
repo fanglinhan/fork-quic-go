@@ -582,17 +582,42 @@ func (b *bandwidthSampler) OnPacketSent(
 	))
 }
 
-func (b *bandwidthSampler) OnPacketAcked(
+func (b *bandwidthSampler) OnCongestionEvent(
 	ackTime time.Time,
-	packetNumber protocol.PacketNumber,
-	bytesAcked protocol.ByteCount) congestionEventSample {
+	ackedPackets []protocol.AckedPacketInfo,
+	lostPackets []protocol.LostPacketInfo,
+	maxBandwidth Bandwidth,
+	estBandwidthUpperBound Bandwidth,
+	roundTripCount roundTripCount,
+) congestionEventSample {
 	eventSample := newCongestionEventSample()
+
+	var lastLostPacketSendState sendTimeState
+
+	for _, p := range lostPackets {
+		sendState := b.OnPacketLost(p.PacketNumber, p.BytesLost)
+		if sendState.isValid {
+			lastLostPacketSendState = sendState
+		}
+	}
+
+	if len(ackedPackets) == 0 {
+		// Only populate send state for a loss-only event.
+		eventSample.lastPacketSendState = lastLostPacketSendState
+		return *eventSample
+	}
+
 	var lastAckedPacketSendState sendTimeState
 	var maxSendRate Bandwidth
 
-	sample := b.onPacketAcknowledged(ackTime, packetNumber)
-	if sample.stateAtSend.isValid {
+	for _, p := range ackedPackets {
+		sample := b.onPacketAcknowledged(ackTime, p.PacketNumber)
+		if !sample.stateAtSend.isValid {
+			continue
+		}
+
 		lastAckedPacketSendState = sample.stateAtSend
+
 		if sample.rtt != 0 {
 			eventSample.sampleRtt = utils.Min(eventSample.sampleRtt, sample.rtt)
 		}
@@ -609,14 +634,31 @@ func (b *bandwidthSampler) OnPacketAcked(
 		}
 	}
 
-	// TODO.
+	if !lastLostPacketSendState.isValid {
+		eventSample.lastPacketSendState = lastAckedPacketSendState
+	} else if !lastAckedPacketSendState.isValid {
+		eventSample.lastPacketSendState = lastLostPacketSendState
+	} else {
+		// If two packets are inflight and an alarm is armed to lose a packet and it
+		// wakes up late, then the first of two in flight packets could have been
+		// acknowledged before the wakeup, which re-evaluates loss detection, and
+		// could declare the later of the two lost.
+		if lostPackets[len(lostPackets)-1].PacketNumber > ackedPackets[len(ackedPackets)-1].PacketNumber {
+			eventSample.lastPacketSendState = lastLostPacketSendState
+		} else {
+			eventSample.lastPacketSendState = lastAckedPacketSendState
+		}
+	}
+
+	isNewMaxBandwidth := eventSample.sampleMaxBandwidth > maxBandwidth
+	maxBandwidth = utils.Max(maxBandwidth, eventSample.sampleMaxBandwidth)
+	if b.limitMaxAckHeightTrackerBySendRate {
+		maxBandwidth = utils.Max(maxBandwidth, maxSendRate)
+	}
+
+	eventSample.extraAcked = b.onAckEventEnd(utils.Min(estBandwidthUpperBound, maxBandwidth), isNewMaxBandwidth, roundTripCount)
 
 	return *eventSample
-
-}
-
-func (b *bandwidthSampler) OnAckEventEnd(roundTripCount roundTripCount) {
-	// TODO
 }
 
 func (b *bandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber, bytesLost protocol.ByteCount) (s sendTimeState) {
@@ -754,6 +796,33 @@ func (b *bandwidthSampler) onPacketAcknowledged(ackTime time.Time, packetNumber 
 	sentPacketToSendTimeState(sentPacketPointer, &sample.stateAtSend)
 
 	return *sample
+}
+
+func (b *bandwidthSampler) onAckEventEnd(
+	bandwidthEstimate Bandwidth,
+	isNewMaxBandwidth bool,
+	roundTripCount roundTripCount,
+) protocol.ByteCount {
+	newlyAckedBytes := b.totalBytesAcked - b.totalBytesAckedAfterLastAckEvent
+	if newlyAckedBytes == 0 {
+		return 0
+	}
+	b.totalBytesAckedAfterLastAckEvent = b.totalBytesAcked
+	extraAcked := b.maxAckHeightTracker.Update(
+		bandwidthEstimate,
+		isNewMaxBandwidth,
+		roundTripCount,
+		b.lastSentPacket,
+		b.lastAckedPacket,
+		b.lastAckedPacketAckTime,
+		newlyAckedBytes)
+	// If |extra_acked| is zero, i.e. this ack event marks the start of a new ack
+	// aggregation epoch, save LessRecentPoint, which is the last ack point of the
+	// previous epoch, as a A0 candidate.
+	if b.overestimateAvoidance && extraAcked == 0 {
+		b.a0Candidates.PushBack(*b.recentAckPoints.LessRecentPoint())
+	}
+	return extraAcked
 }
 
 func sentPacketToSendTimeState(sentPacket *connectionStateOnSentPacket, sendTimeState *sendTimeState) {

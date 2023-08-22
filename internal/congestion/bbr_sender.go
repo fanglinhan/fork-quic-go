@@ -262,7 +262,9 @@ func newBbrSender(
 	initialMaxCongestionWindow protocol.ByteCount,
 	tracer logging.ConnectionTracer,
 ) *bbrSender {
-	b := &bbrSender{}
+	b := &bbrSender{
+		// TODO.
+	}
 
 	return b
 }
@@ -306,17 +308,18 @@ func (b *bbrSender) MaybeExitSlowStart() {
 
 // OnPacketAcked implements the SendAlgorithm interface.
 func (b *bbrSender) OnPacketAcked(number protocol.PacketNumber, ackedBytes protocol.ByteCount, priorInFlight protocol.ByteCount, eventTime time.Time) {
-
+	// Do nothing.
 }
 
 // OnPacketLost implements the SendAlgorithm interface.
 func (b *bbrSender) OnPacketLost(number protocol.PacketNumber, lostBytes protocol.ByteCount, priorInFlight protocol.ByteCount) {
+	// Do nothing.
 
 }
 
 // OnRetransmissionTimeout implements the SendAlgorithm interface.
 func (b *bbrSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
-	// Do nothing
+	// Do nothing.
 }
 
 // SetMaxDatagramSize implements the SendAlgorithm interface.
@@ -352,6 +355,11 @@ func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 	}
 
 	return b.congestionWindow
+}
+
+// OnCongestionEvent implemnets the CongestionEvent interface
+func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTime time.Time, ackedPackets []protocol.AckedPacketInfo, lostPackets []protocol.LostPacketInfo) {
+
 }
 
 func (b *bbrSender) hasGoodBandwidthEstimateForResumption() bool {
