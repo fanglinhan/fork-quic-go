@@ -33,6 +33,23 @@ type sendTimeState struct {
 	bytesInFlight protocol.ByteCount
 }
 
+func newSendTimeState(
+	isAppLimited bool,
+	totalBytesSent protocol.ByteCount,
+	totalBytesAcked protocol.ByteCount,
+	totalBytesLost protocol.ByteCount,
+	bytesInFlight protocol.ByteCount,
+) *sendTimeState {
+	return &sendTimeState{
+		isValid:         true,
+		isAppLimited:    isAppLimited,
+		totalBytesSent:  totalBytesSent,
+		totalBytesAcked: totalBytesAcked,
+		totalBytesLost:  totalBytesLost,
+		bytesInFlight:   bytesInFlight,
+	}
+}
+
 type extraAckedEvent struct {
 	// The excess bytes acknowlwedged in the time delta for this event.
 	extraAcked protocol.ByteCount
@@ -255,7 +272,6 @@ func (r *recentAckPoints) LessRecentPoint() *ackPoint {
 // specifically the information about the most recently acknowledged packet at
 // that moment.
 type connectionStateOnSentPacket struct {
-	packetNumber protocol.PacketNumber
 	// Time at which the packet is sent.
 	sentTime time.Time
 	// Size of the packet.
@@ -272,6 +288,31 @@ type connectionStateOnSentPacket struct {
 	// Send time states that are returned to the congestion controller when the
 	// packet is acked or lost.
 	sendTimeState sendTimeState
+}
+
+// Snapshot constructor. Records the current state of the bandwidth
+// sampler.
+// |bytes_in_flight| is the bytes in flight right after the packet is sent.
+func newConnectionStateOnSentPacket(
+	sentTime time.Time,
+	size protocol.ByteCount,
+	bytesInFlight protocol.ByteCount,
+	sampler *bandwidthSampler,
+) *connectionStateOnSentPacket {
+	return &connectionStateOnSentPacket{
+		sentTime:                        sentTime,
+		size:                            size,
+		totalBytesSentAtLastAckedPacket: sampler.totalBytesSentAtLastAckedPacket,
+		lastAckedPacketSentTime:         sampler.lastAckedPacketSentTime,
+		lastAckedPacketAckTime:          sampler.lastAckedPacketAckTime,
+		sendTimeState: *newSendTimeState(
+			sampler.isAppLimited,
+			sampler.totalBytesSent,
+			sampler.totalBytesAcked,
+			sampler.totalBytesLost,
+			bytesInFlight,
+		),
+	}
 }
 
 // BandwidthSampler keeps track of sent and acknowledged packets and outputs a
@@ -533,13 +574,12 @@ func (b *bandwidthSampler) OnPacketSent(
 		b.lastAckedPacketSentTime = sentTime
 	}
 
-	b.connectionStateMap.Emplace(packetNumber, &connectionStateOnSentPacket{
-		packetNumber:                    packetNumber,
-		sentTime:                        sentTime,
-		size:                            bytes,
-		totalBytesSentAtLastAckedPacket: bytesInFlight + bytes,
-		// TODO.
-	})
+	b.connectionStateMap.Emplace(packetNumber, newConnectionStateOnSentPacket(
+		sentTime,
+		bytes,
+		bytesInFlight+bytes,
+		b,
+	))
 }
 
 func (b *bandwidthSampler) OnPacketAcked(
