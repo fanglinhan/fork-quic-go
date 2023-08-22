@@ -153,7 +153,7 @@ type bbrSender struct {
 	// quic_bbr_cwnd_gain flag.
 	congestionWindowGainConstant float64
 	// The number of RTTs to stay in STARTUP mode.  Defaults to 3.
-	numStartupRtts uint64
+	numStartupRtts int64
 
 	// Number of round-trips in PROBE_BW mode, used for determining the current
 	// pacing gain cycle.
@@ -193,12 +193,12 @@ type bbrSender struct {
 	// A window used to limit the number of bytes in flight during loss recovery.
 	recoveryWindow protocol.ByteCount
 	// If true, consider all samples in recovery app-limited.
-	isAppLimitedRecovery bool
+	isAppLimitedRecovery bool // not used
 
 	// When true, pace at 1.5x and disable packet conservation in STARTUP.
-	slowerStartup bool
+	slowerStartup bool // not used
 	// When true, disables packet conservation in STARTUP.
-	rateBasedStartup bool
+	rateBasedStartup bool // not used
 
 	// When true, add the most recent ack aggregation measurement during STARTUP.
 	enableAckAggregationDuringStartup bool
@@ -223,7 +223,7 @@ type bbrSender struct {
 	cwndToCalculateMinPacingRate protocol.ByteCount
 
 	// Max congestion window when adjusting network parameters.
-	maxCongestionWindowWithNetworkParametersAdjusted protocol.ByteCount
+	maxCongestionWindowWithNetworkParametersAdjusted protocol.ByteCount // not used
 
 	// Params.
 	maxDatagramSize protocol.ByteCount
@@ -599,7 +599,7 @@ func (b *bbrSender) checkIfFullBandwidthReached(lastPacketSendState *sendTimeSta
 	}
 
 	b.roundsWithoutBandwidthGain++
-	if b.roundsWithoutBandwidthGain > int64(b.numStartupRtts) ||
+	if b.roundsWithoutBandwidthGain > b.numStartupRtts ||
 		b.shouldExitStartupDueToLoss(lastPacketSendState) {
 		b.isAtFullBandwidth = true
 	}
