@@ -629,6 +629,8 @@ func (b *bbrSender) maybeEnterOrExitProbeRtt(now time.Time, isRoundStart, minRtt
 	}
 
 	if b.mode == bbrModeProbeRtt {
+		b.sampler.OnAppLimited()
+
 		if b.exitProbeRttAt.IsZero() {
 			// If the window has reached the appropriate size, schedule exiting
 			// PROBE_RTT.  The CWND during PROBE_RTT is kMinimumCongestionWindow, but
