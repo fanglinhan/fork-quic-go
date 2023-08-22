@@ -227,8 +227,7 @@ type bbrSender struct {
 
 	// Params.
 	maxDatagramSize protocol.ByteCount
-	// Custom.
-	// Recorded on packet sent.
+	// Recorded on packet sent. equivalent |unacked_packets_->bytes_in_flight()|
 	bytesInFlight protocol.ByteCount
 }
 
@@ -426,7 +425,7 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 	// window.
 	b.calculatePacingRate(bytesLost)
 	b.calculateCongestionWindow(bytesAcked, excessAcked)
-	b.calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight)
+	b.calculateRecoveryWindow(bytesAcked, bytesLost)
 
 	// Cleanup internal state.
 	if isRoundStart {
@@ -768,14 +767,14 @@ func (b *bbrSender) calculateCongestionWindow(bytesAcked, excessAcked protocol.B
 }
 
 // Determines the appropriate window that constrains the in-flight during recovery.
-func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight protocol.ByteCount) {
+func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost protocol.ByteCount) {
 	if b.recoveryState == bbrRecoveryStateNotInRecovery {
 		return
 	}
 
 	// Set up the initial recovery window.
 	if b.recoveryWindow == 0 {
-		b.recoveryWindow = priorInFlight + bytesAcked
+		b.recoveryWindow = b.bytesInFlight + bytesAcked
 		b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
 		return
 	}
@@ -795,7 +794,7 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight
 	}
 
 	// Always allow sending at least |bytes_acked| in response.
-	b.recoveryWindow = utils.Max[protocol.ByteCount](b.recoveryWindow, priorInFlight+bytesAcked)
+	b.recoveryWindow = utils.Max[protocol.ByteCount](b.recoveryWindow, b.bytesInFlight+bytesAcked)
 	b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
 }
 
