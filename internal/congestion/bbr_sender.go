@@ -369,6 +369,12 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 	// packet in lost_packets.
 	var lastPacketSendState sendTimeState
 
+	// Update bytesInFlight
+	b.bytesInFlight = priorInFlight
+	for _, p := range ackedPackets {
+		b.bytesInFlight -= p.BytesAcked
+	}
+
 	if len(ackedPackets) != 0 {
 		lastAckedPacket := ackedPackets[len(ackedPackets)-1].PacketNumber
 		isRoundStart = b.updateRoundTripCounter(lastAckedPacket)
@@ -377,9 +383,6 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 
 	sample := b.sampler.OnCongestionEvent(eventTime,
 		ackedPackets, lostPackets, b.maxBandwidth.GetBest(), infBandwidth, b.roundTripCount)
-
-	b.bytesInFlight = priorInFlight - (b.sampler.TotalBytesAcked() - totalBytesAckedBefore)
-
 	if sample.lastPacketSendState.isValid {
 		b.lastSampleIsAppLimited = sample.lastPacketSendState.isAppLimited
 		b.hasNoAppLimitedSample = b.hasNoAppLimitedSample || !b.lastSampleIsAppLimited
