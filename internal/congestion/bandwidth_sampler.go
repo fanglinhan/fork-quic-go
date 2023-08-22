@@ -406,6 +406,14 @@ type bandwidthSampler struct {
 	// The most recently acked packet.
 	lastAckedPacket protocol.PacketNumber
 
+	// Indicates whether the bandwidth sampler is currently in an app-limited
+	// phase.
+	isAppLimited bool
+
+	// The packet that will be acknowledged after this one will cause the sampler
+	// to exit the app-limited phase.
+	endOfAppLimitedPhase protocol.PacketNumber
+
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
 	connectionStateMap packetNumberIndexedQueue[connectionStateOnSentPacket]
@@ -473,8 +481,12 @@ func (b *bandwidthSampler) EnableOverestimateAvoidance() {
 	b.maxAckHeightTracker.SetAckAggregationBandwidthThreshold(2.0)
 }
 
-func (b *bandwidthSampler) RemoveObsoletePackets() {
+func (b *bandwidthSampler) IsOverestimateAvoidanceEnabled() bool {
+	return b.overestimateAvoidance
+}
 
+func (b *bandwidthSampler) RemoveObsoletePackets() {
+	// Do nothing
 }
 
 func (b *bandwidthSampler) OnPacketSent(
@@ -522,11 +534,15 @@ func (b *bandwidthSampler) OnPacketSent(
 }
 
 func (b *bandwidthSampler) OnPacketLost() {
-
+	// TODO.
 }
 
 func (b *bandwidthSampler) OnPacketAcked() {
+	// TODO.
+}
 
+func (b *bandwidthSampler) OnAppLimited() {
+	// TODO.
 }
 
 func (b *bandwidthSampler) TotalBytesSent() protocol.ByteCount {
@@ -539,6 +555,18 @@ func (b *bandwidthSampler) TotalBytesLost() protocol.ByteCount {
 
 func (b *bandwidthSampler) TotalBytesAcked() protocol.ByteCount {
 	return b.totalBytesAcked
+}
+
+func (b *bandwidthSampler) IsAppLimited() bool {
+	return b.isAppLimited
+}
+
+func (b *bandwidthSampler) EndOfAppLimitedPhase() protocol.PacketNumber {
+	return b.endOfAppLimitedPhase
+}
+
+func (b *bandwidthSampler) max_ack_height() protocol.ByteCount {
+	return b.maxAckHeightTracker.Get()
 }
 
 func (b *bandwidthSampler) chooseA0Point(totalBytesAcked protocol.ByteCount, a0 *ackPoint) bool {

@@ -26,3 +26,9 @@ type SendAlgorithmWithDebugInfos interface {
 	InRecovery() bool
 	GetCongestionWindow() protocol.ByteCount
 }
+
+// A AckEvents invoked when ack frame processed
+type AckEvents interface {
+	OnAckFrameStart(priorInFlight protocol.ByteCount, eventTime time.Time)
+	OnAckFrameEnd(priorInFlight protocol.ByteCount, eventTime time.Time)
+}
