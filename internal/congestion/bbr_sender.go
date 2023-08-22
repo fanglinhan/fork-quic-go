@@ -377,6 +377,9 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 
 	sample := b.sampler.OnCongestionEvent(eventTime,
 		ackedPackets, lostPackets, b.maxBandwidth.GetBest(), infBandwidth, b.roundTripCount)
+
+	b.bytesInFlight = priorInFlight - (b.sampler.TotalBytesAcked() - totalBytesAckedBefore)
+
 	if sample.lastPacketSendState.isValid {
 		b.lastSampleIsAppLimited = sample.lastPacketSendState.isAppLimited
 		b.hasNoAppLimitedSample = b.hasNoAppLimitedSample || !b.lastSampleIsAppLimited
