@@ -374,6 +374,9 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 	for _, p := range ackedPackets {
 		b.bytesInFlight -= p.BytesAcked
 	}
+	for _, p := range lostPackets {
+		b.bytesInFlight -= p.BytesLost
+	}
 
 	if len(ackedPackets) != 0 {
 		lastAckedPacket := ackedPackets[len(ackedPackets)-1].PacketNumber
