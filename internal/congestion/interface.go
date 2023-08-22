@@ -29,6 +29,6 @@ type SendAlgorithmWithDebugInfos interface {
 
 // A AckEvents invoked when ack frame processed
 type AckEvents interface {
-	OnAckFrameStart(priorInFlight protocol.ByteCount, eventTime time.Time)
+	OnAckFrameBegin(priorInFlight protocol.ByteCount, eventTime time.Time)
 	OnAckFrameEnd(priorInFlight protocol.ByteCount, eventTime time.Time)
 }

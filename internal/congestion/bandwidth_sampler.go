@@ -533,8 +533,13 @@ func (b *bandwidthSampler) OnPacketSent(
 	})
 }
 
-func (b *bandwidthSampler) OnPacketLost() {
-	// TODO.
+func (b *bandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber, bytesLost protocol.ByteCount) (sts sendTimeState) {
+	b.totalBytesLost += bytesLost
+	if sentPacketPointer := b.connectionStateMap.GetEntry(packetNumber); sentPacketPointer != nil {
+		b.sentPacketToSendTimeState(sentPacketPointer, &sts)
+	}
+
+	return sts
 }
 
 func (b *bandwidthSampler) OnPacketAcked() {
@@ -543,6 +548,10 @@ func (b *bandwidthSampler) OnPacketAcked() {
 
 func (b *bandwidthSampler) OnAppLimited() {
 	// TODO.
+}
+
+func (b *bandwidthSampler) OnAckEventEnd() {
+	// TODO
 }
 
 func (b *bandwidthSampler) TotalBytesSent() protocol.ByteCount {
