@@ -359,7 +359,80 @@ func (b *bbrSender) GetCongestionWindow() protocol.ByteCount {
 
 // OnCongestionEvent implemnets the CongestionEvent interface
 func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTime time.Time, ackedPackets []protocol.AckedPacketInfo, lostPackets []protocol.LostPacketInfo) {
+	totalBytesAckedBefore := b.sampler.TotalBytesAcked()
+	totalBytesLostBefore := b.sampler.TotalBytesLost()
 
+	var isRoundStart, minRttExpired bool
+	var excessAcked, bytesLost protocol.ByteCount
+
+	// The send state of the largest packet in acked_packets, unless it is
+	// empty. If acked_packets is empty, it's the send state of the largest
+	// packet in lost_packets.
+	var lastPacketSendState sendTimeState
+
+	if len(ackedPackets) != 0 {
+		lastAckedPacket := ackedPackets[len(ackedPackets)-1].PacketNumber
+		isRoundStart = b.updateRoundTripCounter(lastAckedPacket)
+		b.updateRecoveryState(lastAckedPacket, len(lostPackets) != 0, isRoundStart)
+	}
+
+	sample := b.sampler.OnCongestionEvent(eventTime,
+		ackedPackets, lostPackets, b.maxBandwidth.GetBest(), infBandwidth, b.roundTripCount)
+	if sample.lastPacketSendState.isValid {
+		b.lastSampleIsAppLimited = sample.lastPacketSendState.isAppLimited
+		b.hasNoAppLimitedSample = b.hasNoAppLimitedSample || !b.lastSampleIsAppLimited
+	}
+	// Avoid updating |max_bandwidth_| if a) this is a loss-only event, or b) all
+	// packets in |acked_packets| did not generate valid samples. (e.g. ack of
+	// ack-only packets). In both cases, sampler_.total_bytes_acked() will not
+	// change.
+	if totalBytesAckedBefore != b.sampler.TotalBytesAcked() {
+		if !sample.sampleIsAppLimited || sample.sampleMaxBandwidth > b.maxBandwidth.GetBest() {
+			b.maxBandwidth.Update(sample.sampleMaxBandwidth, b.roundTripCount)
+		}
+	}
+
+	if sample.sampleRtt != infRTT {
+		minRttExpired = b.maybeUpdateMinRtt(eventTime, sample.sampleRtt)
+	}
+	bytesLost = b.sampler.TotalBytesLost() - totalBytesLostBefore
+
+	excessAcked = sample.extraAcked
+	lastPacketSendState = sample.lastPacketSendState
+
+	if len(lostPackets) != 0 {
+		b.numLossEventsInRound++
+		b.bytesLostInRound += bytesLost
+	}
+
+	// Handle logic specific to PROBE_BW mode.
+	if b.mode == bbrModeProbeBw {
+		b.updateGainCyclePhase(eventTime, priorInFlight, len(lostPackets) != 0)
+	}
+
+	// Handle logic specific to STARTUP and DRAIN modes.
+	if isRoundStart && !b.isAtFullBandwidth {
+		b.checkIfFullBandwidthReached(&lastPacketSendState)
+	}
+	b.maybeExitStartupOrDrain(eventTime)
+
+	// Handle logic specific to PROBE_RTT.
+	b.maybeEnterOrExitProbeRtt(eventTime, isRoundStart, minRttExpired)
+
+	// Calculate number of packets acked and lost.
+	bytesAcked := b.sampler.TotalBytesAcked() - totalBytesAckedBefore
+
+	// After the model is updated, recalculate the pacing rate and congestion
+	// window.
+	b.calculatePacingRate(bytesLost)
+	b.calculateCongestionWindow(bytesAcked, excessAcked)
+	b.calculateRecoveryWindow(bytesAcked, bytesLost, priorInFlight)
+
+	// Cleanup internal state.
+	if isRoundStart {
+		b.numLossEventsInRound = 0
+		b.bytesLostInRound = 0
+	}
 }
 
 func (b *bbrSender) hasGoodBandwidthEstimateForResumption() bool {
