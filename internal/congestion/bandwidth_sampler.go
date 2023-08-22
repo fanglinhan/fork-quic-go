@@ -365,7 +365,7 @@ type congestionEventSample struct {
 	sampleIsAppLimited bool
 	// The minimum rtt sample from all acked packets.
 	// QuicTime::Delta::Infinite() if no samples are available.
-	SampleRtt time.Duration
+	sampleRtt time.Duration
 	// For each packet p in acked packets, this is the max value of INFLIGHT(p),
 	// where INFLIGHT(p) is the number of bytes acked while p is inflight.
 	sampleMaxInflight protocol.ByteCount
@@ -381,7 +381,7 @@ type congestionEventSample struct {
 
 func newCongestionEventSample() *congestionEventSample {
 	return &congestionEventSample{
-		SampleRtt: infRTT,
+		sampleRtt: infRTT,
 	}
 }
 
@@ -543,10 +543,36 @@ func (b *bandwidthSampler) OnPacketSent(
 }
 
 func (b *bandwidthSampler) OnPacketAcked(
-	sentTime time.Time,
+	ackTime time.Time,
 	packetNumber protocol.PacketNumber,
-	bytesAcked protocol.ByteCount) {
+	bytesAcked protocol.ByteCount) congestionEventSample {
+	eventSample := newCongestionEventSample()
+	var lastAckedPacketSendState sendTimeState
+	var maxSendRate Bandwidth
+
+	sample := b.onPacketAcknowledged(ackTime, packetNumber)
+	if sample.stateAtSend.isValid {
+		lastAckedPacketSendState = sample.stateAtSend
+		if sample.rtt != 0 {
+			eventSample.sampleRtt = utils.Min(eventSample.sampleRtt, sample.rtt)
+		}
+		if sample.bandwidth > eventSample.sampleMaxBandwidth {
+			eventSample.sampleMaxBandwidth = sample.bandwidth
+			eventSample.sampleIsAppLimited = sample.stateAtSend.isAppLimited
+		}
+		if sample.sendRate != infBandwidth {
+			maxSendRate = utils.Max(maxSendRate, sample.sendRate)
+		}
+		inflightSample := b.totalBytesAcked - lastAckedPacketSendState.totalBytesAcked
+		if inflightSample > eventSample.sampleMaxInflight {
+			eventSample.sampleMaxInflight = inflightSample
+		}
+	}
+
 	// TODO.
+
+	return *eventSample
+
 }
 
 func (b *bandwidthSampler) OnAckEventEnd(roundTripCount roundTripCount) {
