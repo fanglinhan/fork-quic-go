@@ -285,6 +285,9 @@ func newBbrSender(
 		maxCongestionWindowWithNetworkParametersAdjusted: initialMaxCongestionWindow,
 	}
 
+	b.enterStartupMode(time.Now())
+	b.setHighCwndGain(derivedHighCWNDGain)
+
 	return b
 }
 
