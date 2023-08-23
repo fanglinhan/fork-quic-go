@@ -106,9 +106,9 @@ type maxAckHeightTracker struct {
 	reduceExtraAckedOnBandwidthIncrease    bool
 }
 
-func newMaxAckHeightTracker() *maxAckHeightTracker {
+func newMaxAckHeightTracker(windowLength roundTripCount) *maxAckHeightTracker {
 	return &maxAckHeightTracker{
-		maxAckHeightFilter: utils.NewWindowedFilter[extraAckedEvent, roundTripCount](0, maxExtraAckedEventFunc),
+		maxAckHeightFilter: utils.NewWindowedFilter[extraAckedEvent, roundTripCount](windowLength, maxExtraAckedEventFunc),
 	}
 }
 
@@ -485,13 +485,9 @@ type bandwidthSampler struct {
 }
 
 func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwidthSampler {
-	b := &bandwidthSampler{
-		maxAckHeightTracker: *newMaxAckHeightTracker(),
+	return &bandwidthSampler{
+		maxAckHeightTracker: *newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
 	}
-
-	b.maxAckHeightTracker.SetFilterWindowLength(maxAckHeightTrackerWindowLength)
-
-	return b
 }
 
 func (b *bandwidthSampler) MaxAckHeight() protocol.ByteCount {

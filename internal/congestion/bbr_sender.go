@@ -86,14 +86,14 @@ const (
 
 type bbrSender struct {
 	rttStats *utils.RTTStats
-
-	rand utils.Rand
+	clock    Clock
+	rand     utils.Rand
 
 	mode bbrMode
 
 	// Bandwidth sampler provides BBR with the bandwidth measurements at
 	// individual points.
-	sampler bandwidthSampler
+	sampler *bandwidthSampler
 
 	// The number of the round trips that have occurred during the connection.
 	roundTripCount roundTripCount
@@ -262,7 +262,27 @@ func newBbrSender(
 	tracer logging.ConnectionTracer,
 ) *bbrSender {
 	b := &bbrSender{
-		// TODO.
+		clock:                        clock,
+		rttStats:                     rttStats,
+		mode:                         bbrModeStartup,
+		sampler:                      newBandwidthSampler(roundTripCount(bandwidthWindowSize)),
+		maxBandwidth:                 utils.NewWindowedFilter[Bandwidth, roundTripCount](roundTripCount(bandwidthWindowSize), utils.MaxFilter[Bandwidth]),
+		congestionWindow:             initialCongestionWindow,
+		initialCongestionWindow:      initialCongestionWindow,
+		maxCongestionWindow:          initialMaxCongestionWindow,
+		minCongestionWindow:          defaultMinimumCongestionWindow,
+		highGain:                     defaultHighGain,
+		highCwndGain:                 defaultHighGain,
+		drainGain:                    1.0 / defaultHighGain,
+		pacingGain:                   1.0,
+		congestionWindowGain:         1.0,
+		congestionWindowGainConstant: 2.0,
+		numStartupRtts:               roundTripsWithoutGrowthBeforeExitingStartup,
+		recoveryState:                bbrRecoveryStateNotInRecovery,
+		recoveryWindow:               initialMaxCongestionWindow,
+		bytesLostMultiplierWhileDetectingOvershooting:    2,
+		cwndToCalculateMinPacingRate:                     initialCongestionWindow,
+		maxCongestionWindowWithNetworkParametersAdjusted: initialMaxCongestionWindow,
 	}
 
 	return b
