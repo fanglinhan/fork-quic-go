@@ -35,7 +35,7 @@ var _ = Describe("RingBuffer", func() {
 		Expect(r.full).To(BeFalse())
 		Expect(r.Len()).To(Equal(0))
 	})
-	It("front/back/offset", func() {
+	It("front, back, offset", func() {
 		r := RingBuffer[int]{}
 		r.Init(3)
 		r.PushBack(1)
