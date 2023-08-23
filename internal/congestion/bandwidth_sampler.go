@@ -474,7 +474,7 @@ type bandwidthSampler struct {
 	// Maximum number of tracked packets.
 	maxTrackedPackets protocol.ByteCount
 
-	maxAckHeightTracker              maxAckHeightTracker
+	maxAckHeightTracker              *maxAckHeightTracker
 	totalBytesAckedAfterLastAckEvent protocol.ByteCount
 
 	// True if connection option 'BSAO' is set.
@@ -486,7 +486,7 @@ type bandwidthSampler struct {
 
 func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwidthSampler {
 	return &bandwidthSampler{
-		maxAckHeightTracker: *newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
+		maxAckHeightTracker: newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
 	}
 }
 
