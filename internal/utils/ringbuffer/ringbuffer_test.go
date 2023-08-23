@@ -46,6 +46,7 @@ var _ = Describe("RingBuffer", func() {
 		Expect(r.full).To(BeTrue())
 		Expect(*r.Front()).To(Equal(2))
 		Expect(*r.Back()).To(Equal(4))
+		Expect(func() { r.Offset(4) }).To(Panic())
 		Expect(*r.Offset(0)).To(Equal(2))
 		Expect(*r.Offset(1)).To(Equal(3))
 		Expect(*r.Offset(2)).To(Equal(4))
