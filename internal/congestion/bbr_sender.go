@@ -227,6 +227,7 @@ type bbrSender struct {
 
 	// Params.
 	maxDatagramSize protocol.ByteCount
+	tracer          logging.ConnectionTracer
 	// Recorded on packet sent. equivalent |unacked_packets_->bytes_in_flight()|
 	bytesInFlight protocol.ByteCount
 }
@@ -283,6 +284,8 @@ func newBbrSender(
 		bytesLostMultiplierWhileDetectingOvershooting:    2,
 		cwndToCalculateMinPacingRate:                     initialCongestionWindow,
 		maxCongestionWindowWithNetworkParametersAdjusted: initialMaxCongestionWindow,
+		maxDatagramSize: initialMaxDatagramSize,
+		tracer:          tracer,
 	}
 
 	b.enterStartupMode(time.Now())
