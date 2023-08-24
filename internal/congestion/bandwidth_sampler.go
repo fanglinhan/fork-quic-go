@@ -201,12 +201,12 @@ func (m *maxAckHeightTracker) Update(
 
 	// Compute how many extra bytes were delivered vs max bandwidth.
 	extraBytesAcked := m.aggregationEpochBytes - expectedBytesAcked
-	new_event := extraAckedEvent{
+	newEvent := extraAckedEvent{
 		extraAcked: expectedBytesAcked,
 		bytesAcked: m.aggregationEpochBytes,
 		timeDelta:  aggregationDelta,
 	}
-	m.maxAckHeightFilter.Update(new_event, roundTripCount)
+	m.maxAckHeightFilter.Update(newEvent, roundTripCount)
 	return extraBytesAcked
 }
 
