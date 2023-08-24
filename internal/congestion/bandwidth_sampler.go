@@ -146,17 +146,17 @@ func (m *maxAckHeightTracker) Update(
 		// Reinsert the heights into the filter after recalculating.
 		expectedBytesAcked := bytesFromBandwidthAndTimeDelta(bandwidthEstimate, best.timeDelta)
 		if expectedBytesAcked < best.bytesAcked {
-			best.extraAcked = best.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			best.extraAcked = best.bytesAcked - expectedBytesAcked
 			m.maxAckHeightFilter.Update(best, best.round)
 		}
 		expectedBytesAcked = bytesFromBandwidthAndTimeDelta(bandwidthEstimate, secondBest.timeDelta)
 		if expectedBytesAcked < secondBest.bytesAcked {
-			secondBest.extraAcked = secondBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			secondBest.extraAcked = secondBest.bytesAcked - expectedBytesAcked
 			m.maxAckHeightFilter.Update(secondBest, secondBest.round)
 		}
 		expectedBytesAcked = bytesFromBandwidthAndTimeDelta(bandwidthEstimate, thirdBest.timeDelta)
 		if expectedBytesAcked < thirdBest.bytesAcked {
-			thirdBest.extraAcked = thirdBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
+			thirdBest.extraAcked = thirdBest.bytesAcked - expectedBytesAcked
 			m.maxAckHeightFilter.Update(thirdBest, thirdBest.round)
 		}
 	}
@@ -183,7 +183,7 @@ func (m *maxAckHeightTracker) Update(
 	expectedBytesAcked := bytesFromBandwidthAndTimeDelta(bandwidthEstimate, aggregationDelta)
 	// Reset the current aggregation epoch as soon as the ack arrival rate is less
 	// than or equal to the max bandwidth.
-	if m.aggregationEpochBytes <= protocol.ByteCount(m.ackAggregationBandwidthThreshold)*expectedBytesAcked {
+	if m.aggregationEpochBytes <= protocol.ByteCount(m.ackAggregationBandwidthThreshold*float64(expectedBytesAcked)) {
 		// Reset to start measuring a new aggregation epoch.
 		m.aggregationEpochBytes = bytesAcked
 		m.aggregationEpochStartTime = ackTime
