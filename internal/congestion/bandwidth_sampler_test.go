@@ -10,14 +10,18 @@ import (
 
 var _ = Describe("Bandwidth sampler", func() {
 	var (
-		bandwidth          Bandwidth = Bandwidth(10 * 1000)
-		aggregationEpisode           = func(
+		//now       time.Time
+		bandwidth Bandwidth = Bandwidth(10 * 1000)
+
+		aggregationEpisode = func(
 			aggregationBandwidth Bandwidth,
 			aggregationDuration time.Duration,
 			bytesPerAck protocol.ByteCount,
 			expectNewAggregationEpoch bool,
 		) {
-			Expect(0).To(Equal(1))
+			Expect(aggregationBandwidth >= bandwidth).To(BeTrue())
+			//startTime := now
+			// aggregationBytes := aggregationBandwidth * aggregationDuration
 		}
 	)
 

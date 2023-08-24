@@ -26,3 +26,10 @@ const (
 func BandwidthFromDelta(bytes protocol.ByteCount, delta time.Duration) Bandwidth {
 	return Bandwidth(bytes) * Bandwidth(time.Second) / Bandwidth(delta) * BytesPerSecond
 }
+
+// BytesFromBandwidthAndTimeDelta calculates the bytes
+// from a bandwidth(bits per second) and a time delta
+func BytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) protocol.ByteCount {
+	return (protocol.ByteCount(bandwidth) * protocol.ByteCount(delta)) /
+		(protocol.ByteCount(time.Second) * 8)
+}
