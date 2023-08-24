@@ -844,3 +844,7 @@ func BytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) pr
 	return (protocol.ByteCount(bandwidth) * protocol.ByteCount(delta)) /
 		(protocol.ByteCount(time.Second) * 8)
 }
+
+func TimeDeltaFromBytesAndBandwidth(bytes protocol.ByteCount, bandwidth Bandwidth) time.Duration {
+	return time.Duration(bytes*8) * time.Second / time.Duration(bandwidth)
+}
