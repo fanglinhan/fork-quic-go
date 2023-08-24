@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("unit", func() {
+var _ = Describe("Windowed filter", func() {
 	var (
 		// now            int64
 		windowedMinRtt *WindowedFilter[time.Duration, int64]

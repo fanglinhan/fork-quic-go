@@ -6,7 +6,7 @@ import (
 	"github.com/quic-go/quic-go/internal/protocol"
 )
 
-var _ = Describe("unit", func() {
+var _ = Describe("PacketNumber indexed queue", func() {
 	var (
 		queue       *packetNumberIndexedQueue[string]
 		strZero     string = "zero"
