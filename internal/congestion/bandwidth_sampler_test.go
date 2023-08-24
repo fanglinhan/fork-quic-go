@@ -97,6 +97,17 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 	It("VeryAggregatedLargeAck", func() {
 		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
+		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
+
+		now.Add(-1 * time.Millisecond)
+
+		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
+			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+		} else {
+			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, false)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		}
 	})
 
 	It("VeryAggregatedSmallAcks", func() {
