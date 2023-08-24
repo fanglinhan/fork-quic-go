@@ -74,7 +74,7 @@ var _ = Describe("MaxAckHeightTracker", func() {
 				} else {
 					Expect(lastExtraAcked < extraAcked).To(BeTrue())
 				}
-				now.Add(timeBetweenAcks)
+				now = now.Add(timeBetweenAcks)
 				lastExtraAcked = extraAcked
 			}
 
