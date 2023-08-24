@@ -115,7 +115,9 @@ type maxAckHeightTracker struct {
 
 func newMaxAckHeightTracker(windowLength roundTripCount) *maxAckHeightTracker {
 	return &maxAckHeightTracker{
-		maxAckHeightFilter: utils.NewWindowedFilter[extraAckedEvent, roundTripCount](windowLength, maxExtraAckedEventFunc),
+		maxAckHeightFilter:               utils.NewWindowedFilter[extraAckedEvent, roundTripCount](windowLength, maxExtraAckedEventFunc),
+		lastSentPacketNumberBeforeEpoch:  protocol.InvalidPacketNumber,
+		ackAggregationBandwidthThreshold: 1.0,
 	}
 }
 
@@ -178,14 +180,14 @@ func (m *maxAckHeightTracker) Update(
 	// Compute how many bytes are expected to be delivered, assuming max bandwidth
 	// is correct.
 	aggregationDelta := ackTime.Sub(m.aggregationEpochStartTime)
-	expectedBytesAcked := protocol.ByteCount(bandwidthEstimate) * protocol.ByteCount(aggregationDelta)
+	expectedBytesAcked := bytesFromBandwidthAndTimeDelta(bandwidthEstimate, aggregationDelta)
 	// Reset the current aggregation epoch as soon as the ack arrival rate is less
 	// than or equal to the max bandwidth.
 	if m.aggregationEpochBytes <= protocol.ByteCount(m.ackAggregationBandwidthThreshold)*expectedBytesAcked {
 		// Reset to start measuring a new aggregation epoch.
 		m.aggregationEpochBytes = bytesAcked
 		m.aggregationEpochStartTime = ackTime
-		m.lastSentPacketNumberBeforeEpoch = lastAckedPacketNumber
+		m.lastSentPacketNumberBeforeEpoch = lastSentPacketNumber
 		m.numAckAggregationEpochs++
 		return 0
 	}
@@ -493,8 +495,11 @@ type bandwidthSampler struct {
 
 func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwidthSampler {
 	b := &bandwidthSampler{
-		maxAckHeightTracker: newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
-		connectionStateMap:  newPacketNumberIndexedQueue[connectionStateOnSentPacket](defaultConnectionStateMapQueueSize),
+		maxAckHeightTracker:  newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
+		connectionStateMap:   newPacketNumberIndexedQueue[connectionStateOnSentPacket](defaultConnectionStateMapQueueSize),
+		lastSentPacket:       protocol.InvalidPacketNumber,
+		lastAckedPacket:      protocol.InvalidPacketNumber,
+		endOfAppLimitedPhase: protocol.InvalidPacketNumber,
 	}
 
 	b.a0Candidates.Init(defaultCandidatesBufferSize)

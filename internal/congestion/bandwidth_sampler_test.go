@@ -98,7 +98,6 @@ var _ = Describe("MaxAckHeightTracker", func() {
 	It("VeryAggregatedLargeAck", func() {
 		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
 		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
-
 		now.Add(-1 * time.Millisecond)
 
 		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
@@ -111,23 +110,62 @@ var _ = Describe("MaxAckHeightTracker", func() {
 	})
 
 	It("VeryAggregatedSmallAcks", func() {
+		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, true)
+		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, true)
+		now.Add(-1 * time.Millisecond)
 
+		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
+			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, true)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+		} else {
+			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, false)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		}
 	})
 
 	It("SomewhatAggregatedLargeAck", func() {
+		aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, true)
+		aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, true)
+		now.Add(-1 * time.Millisecond)
 
+		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
+			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, true)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+		} else {
+			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, false)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		}
 	})
 
 	It("SomewhatAggregatedSmallAcks", func() {
+		aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, true)
+		aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, true)
+		now.Add(-1 * time.Millisecond)
 
+		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
+			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, true)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+		} else {
+			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, false)
+			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		}
 	})
 
 	It("NotAggregated", func() {
-
+		aggregationEpisode(bandwidth, time.Duration(100*time.Millisecond), 100, true)
+		// Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
 	})
 
 	It("StartNewEpochAfterAFullRound", func() {
+		lastSentPacketNumber = protocol.PacketNumber(10)
+		aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, true)
 
+		lastAckedPacketNumber = protocol.PacketNumber(11)
+		// Update with a tiny bandwidth causes a very low expected bytes acked, which
+		// in turn causes the current epoch to continue if the |tracker_| doesn't
+		// check the packet numbers.
+		tracker.Update(bandwidth/10, true, getRoundTripCount(), lastSentPacketNumber, lastAckedPacketNumber, now, 100)
+		Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
 	})
 })
 
