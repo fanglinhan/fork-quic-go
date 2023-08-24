@@ -466,6 +466,10 @@ func (b *bbrSender) OnCongestionEvent(priorInFlight protocol.ByteCount, eventTim
 	b.calculateRecoveryWindow(bytesAcked, bytesLost)
 
 	// Cleanup internal state.
+	if len(lostPackets) != 0 {
+		lastLostPacket := lostPackets[len(lostPackets)-1].PacketNumber
+		b.sampler.RemoveObsoletePackets(lastLostPacket)
+	}
 	if isRoundStart {
 		b.numLossEventsInRound = 0
 		b.bytesLostInRound = 0
