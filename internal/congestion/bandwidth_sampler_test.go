@@ -1,12 +1,25 @@
 package congestion
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 var _ = Describe("Bandwidth sampler", func() {
-	var ()
+	var (
+		bandwidth          Bandwidth = Bandwidth(10 * 1000)
+		aggregationEpisode           = func(
+			aggregationBandwidth Bandwidth,
+			aggregationDuration time.Duration,
+			bytesPerAck protocol.ByteCount,
+			expectNewAggregationEpoch bool,
+		) {
+			Expect(0).To(Equal(1))
+		}
+	)
 
 	BeforeEach(func() {
 
@@ -16,10 +29,11 @@ var _ = Describe("Bandwidth sampler", func() {
 		Expect(0).To(Equal(0))
 		Expect(true).To(BeTrue())
 		Expect(func() { panic("") }).To(Panic())
+
 	})
 
 	It("SendAndWait", func() {
-
+		aggregationEpisode(bandwidth, time.Duration(6*time.Millisecond), 1200, true)
 	})
 
 	It("SendTimeState", func() {
@@ -80,10 +94,14 @@ var _ = Describe("Bandwidth sampler", func() {
 })
 
 var _ = Describe("Max ack height tracker", func() {
-	var ()
+	var (
+		tracker *maxAckHeightTracker
+	)
 
 	BeforeEach(func() {
-
+		tracker = newMaxAckHeightTracker(10)
+		tracker.SetAckAggregationBandwidthThreshold(float64(1.8))
+		tracker.SetStartNewAggregationEpochAfterFullRound(true)
 	})
 
 	It("VeryAggregatedLargeAck", func() {

@@ -16,11 +16,11 @@ var _ = Describe("Windowed filter", func() {
 
 		initializeMinFilter = func() {
 			var nowTime int64 = 0
-			var rttSample time.Duration = 10
+			var rttSample time.Duration = 10 * time.Millisecond
 			for i := 0; i < 5; i++ {
 				windowedMinRtt.Update(rttSample, nowTime)
 				nowTime += 25
-				rttSample += 10
+				rttSample += 10 * time.Millisecond
 			}
 		}
 
@@ -44,15 +44,14 @@ var _ = Describe("Windowed filter", func() {
 	)
 
 	BeforeEach(func() {
-		// now = time.Now().UnixNano() / 1e6
 		windowedMinRtt = NewWindowedFilter[time.Duration, int64](99, MinFilter[time.Duration])
 		windowedMaxBw = NewWindowedFilter[uint64, int64](99, MaxFilter[uint64])
 	})
 
 	It("UninitializedEstimates", func() {
-		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(0)))
-		Expect(windowedMinRtt.GetSecondBest()).To(Equal(time.Duration(0)))
-		Expect(windowedMinRtt.GetThirdBest()).To(Equal(time.Duration(0)))
+		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(0 * time.Millisecond)))
+		Expect(windowedMinRtt.GetSecondBest()).To(Equal(time.Duration(0 * time.Millisecond)))
+		Expect(windowedMinRtt.GetThirdBest()).To(Equal(time.Duration(0 * time.Millisecond)))
 		Expect(windowedMaxBw.GetBest()).To(Equal(uint64(0)))
 		Expect(windowedMaxBw.GetSecondBest()).To(Equal(uint64(0)))
 		Expect(windowedMaxBw.GetThirdBest()).To(Equal(uint64(0)))
@@ -60,22 +59,22 @@ var _ = Describe("Windowed filter", func() {
 
 	It("MonotonicallyIncreasingMin", func() {
 		var nowTime int64 = 0
-		var rttSample time.Duration = 10
+		var rttSample time.Duration = 10 * time.Millisecond
 		windowedMinRtt.Update(rttSample, nowTime)
-		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(10)))
+		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(10 * time.Millisecond)))
 
 		// Gradually increase the rtt samples and ensure the windowed min rtt starts
 		// rising.
 		for i := 0; i < 6; i++ {
 			nowTime += 25
-			rttSample += 10
+			rttSample += 10 * time.Millisecond
 			windowedMinRtt.Update(rttSample, nowTime)
 			if i < 3 {
-				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(10)))
+				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(10 * time.Millisecond)))
 			} else if i == 3 {
-				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20)))
+				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20 * time.Millisecond)))
 			} else if i < 6 {
-				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(40)))
+				Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(40 * time.Millisecond)))
 			}
 		}
 	})
@@ -105,14 +104,14 @@ var _ = Describe("Windowed filter", func() {
 	It("SampleChangesThirdBestMin", func() {
 		initializeMinFilter()
 		// RTT sample lower than the third-choice min-rtt sets that, but nothing else.
-		var rttSample = windowedMinRtt.GetThirdBest() - time.Duration(5)
-		Expect(windowedMinRtt.GetThirdBest() > time.Duration(5)).To(BeTrue())
+		var rttSample = windowedMinRtt.GetThirdBest() - time.Duration(5*time.Millisecond)
+		Expect(windowedMinRtt.GetThirdBest() > time.Duration(5*time.Millisecond)).To(BeTrue())
 		// Latest sample was recorded at 100ms.
 		var nowTime int64 = 101
 		windowedMinRtt.Update(rttSample, nowTime)
 		Expect(windowedMinRtt.GetThirdBest()).To(Equal(rttSample))
-		Expect(windowedMinRtt.GetSecondBest()).To(Equal(time.Duration(40)))
-		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20)))
+		Expect(windowedMinRtt.GetSecondBest()).To(Equal(time.Duration(40 * time.Millisecond)))
+		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20 * time.Millisecond)))
 	})
 
 	It("SampleChangesThirdBestMax", func() {
@@ -131,14 +130,14 @@ var _ = Describe("Windowed filter", func() {
 		initializeMinFilter()
 		// RTT sample lower than the second-choice min sets that and also
 		// the third-choice min.
-		var rttSample = windowedMinRtt.GetSecondBest() - time.Duration(5)
-		Expect(windowedMinRtt.GetSecondBest() > time.Duration(5)).To(BeTrue())
+		var rttSample = windowedMinRtt.GetSecondBest() - time.Duration(5*time.Millisecond)
+		Expect(windowedMinRtt.GetSecondBest() > time.Duration(5*time.Millisecond)).To(BeTrue())
 		// Latest sample was recorded at 100ms.
 		var nowTime int64 = 101
 		windowedMinRtt.Update(rttSample, nowTime)
 		Expect(windowedMinRtt.GetThirdBest()).To(Equal(rttSample))
 		Expect(windowedMinRtt.GetSecondBest()).To(Equal(rttSample))
-		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20)))
+		Expect(windowedMinRtt.GetBest()).To(Equal(time.Duration(20 * time.Millisecond)))
 	})
 
 	It("SampleChangesSecondBestMax", func() {
@@ -158,8 +157,8 @@ var _ = Describe("Windowed filter", func() {
 		initializeMinFilter()
 		// RTT sample lower than the first-choice min-rtt sets that and also
 		// the second and third-choice mins.
-		var rttSample = windowedMinRtt.GetBest() - time.Duration(5)
-		Expect(windowedMinRtt.GetBest() > time.Duration(5)).To(BeTrue())
+		var rttSample = windowedMinRtt.GetBest() - time.Duration(5*time.Millisecond)
+		Expect(windowedMinRtt.GetBest() > time.Duration(5*time.Millisecond)).To(BeTrue())
 		// Latest sample was recorded at 100ms.
 		var nowTime int64 = 101
 		windowedMinRtt.Update(rttSample, nowTime)
@@ -185,7 +184,7 @@ var _ = Describe("Windowed filter", func() {
 		initializeMinFilter()
 		var oldThirdBest = windowedMinRtt.GetThirdBest()
 		var oldSecondBest = windowedMinRtt.GetSecondBest()
-		var rttSample = oldThirdBest + time.Duration(5)
+		var rttSample = oldThirdBest + time.Duration(5*time.Millisecond)
 		// Best min sample was recorded at 25ms, so expiry time is 124ms.
 		var nowTime int64 = 125
 		windowedMinRtt.Update(rttSample, nowTime)
@@ -210,7 +209,7 @@ var _ = Describe("Windowed filter", func() {
 	It("ExpireSecondBestMin", func() {
 		initializeMinFilter()
 		var oldThirdBest = windowedMinRtt.GetThirdBest()
-		var rttSample = oldThirdBest + time.Duration(5)
+		var rttSample = oldThirdBest + time.Duration(5*time.Millisecond)
 		// Second best min sample was recorded at 75ms, so expiry time is 174ms.
 		var nowTime int64 = 175
 		windowedMinRtt.Update(rttSample, nowTime)
@@ -233,8 +232,8 @@ var _ = Describe("Windowed filter", func() {
 
 	It("ExpireAllMins", func() {
 		initializeMinFilter()
-		var rttSample = windowedMinRtt.GetThirdBest() + time.Duration(5)
-		Expect(windowedMinRtt.GetBest() < time.Duration(math.MaxInt64)-time.Duration(5)).To(BeTrue())
+		var rttSample = windowedMinRtt.GetThirdBest() + time.Duration(5*time.Millisecond)
+		Expect(windowedMinRtt.GetBest() < time.Duration(math.MaxInt64)-time.Duration(5*time.Millisecond)).To(BeTrue())
 		// Third best min sample was recorded at 100ms, so expiry time is 199ms.
 		var nowTime int64 = 200
 		windowedMinRtt.Update(rttSample, nowTime)
