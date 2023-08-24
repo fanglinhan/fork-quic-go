@@ -153,7 +153,7 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 	It("NotAggregated", func() {
 		aggregationEpisode(bandwidth, time.Duration(100*time.Millisecond), 100, true)
-		// Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
 	})
 
 	It("StartNewEpochAfterAFullRound", func() {
