@@ -9,27 +9,34 @@ import (
 )
 
 var _ = Describe("function", func() {
-	It("bytes from bandwidth and time delta", func() {
+	It("BytesFromBandwidthAndTimeDelta", func() {
 		Expect(
-			BytesFromBandwidthAndTimeDelta(
+			bytesFromBandwidthAndTimeDelta(
 				Bandwidth(80000),
 				100*time.Millisecond,
 			)).To(Equal(protocol.ByteCount(1000)))
 	})
 
-	It("time delta from bytes and bandwidth", func() {
-		Expect(TimeDeltaFromBytesAndBandwidth(
+	It("TimeDeltaFromBytesAndBandwidth", func() {
+		Expect(timeDeltaFromBytesAndBandwidth(
 			protocol.ByteCount(50000),
 			Bandwidth(400),
 		)).To(Equal(1000 * time.Second))
 	})
 })
 
-var _ = Describe("Max ack height tracker", func() {
+var _ = Describe("MaxAckHeightTracker", func() {
 	var (
-		tracker *maxAckHeightTracker
-		//now       time.Time
-		bandwidth Bandwidth = Bandwidth(10 * 1000)
+		tracker               *maxAckHeightTracker
+		now                   time.Time
+		rtt                   time.Duration
+		bandwidth             Bandwidth
+		lastSentPacketNumber  protocol.PacketNumber
+		lastAckedPacketNumber protocol.PacketNumber
+
+		getRoundTripCount = func() roundTripCount {
+			return roundTripCount(now.Sub(time.Time{}) / rtt)
+		}
 
 		// Run a full aggregation episode, which is one or more aggregated acks,
 		// followed by a quiet period in which no ack happens.
@@ -41,17 +48,38 @@ var _ = Describe("Max ack height tracker", func() {
 			bytesPerAck protocol.ByteCount,
 			expectNewAggregationEpoch bool,
 		) {
-			// Expect(aggregationBandwidth >= bandwidth).To(BeTrue())
-			// startTime := now
-			// aggregationBytes := BytesFromBandwidthAndTimeDelta(aggregationBandwidth, aggregationDuration)
-			// numAcks := aggregationBytes / bytesPerAck
-			// Expect(aggregationBytes).To(Equal(numAcks * bytesPerAck))
-			// timeBetweenAcks := aggregationDuration / time.Duration(numAcks)
-			// Expect(aggregationDuration).To(Equal(time.Duration(numAcks) * timeBetweenAcks))
+			Expect(aggregationBandwidth >= bandwidth).To(BeTrue())
+			startTime := now
+			aggregationBytes := bytesFromBandwidthAndTimeDelta(aggregationBandwidth, aggregationDuration)
+			numAcks := aggregationBytes / bytesPerAck
+			Expect(aggregationBytes).To(Equal(numAcks * bytesPerAck))
+			timeBetweenAcks := aggregationDuration / time.Duration(numAcks)
+			Expect(aggregationDuration).To(Equal(time.Duration(numAcks) * timeBetweenAcks))
 
 			// The total duration of aggregation time and quiet period.
-			//totalDuration =
+			totalDuration := timeDeltaFromBytesAndBandwidth(aggregationBytes, bandwidth)
+			Expect(aggregationBytes).To(Equal(bytesFromBandwidthAndTimeDelta(bandwidth, totalDuration)))
 
+			var lastExtraAcked protocol.ByteCount
+			for bytes := protocol.ByteCount(0); bytes < aggregationBytes; bytes += bytesPerAck {
+				extraAcked := tracker.Update(
+					bandwidth, true, getRoundTripCount(),
+					lastSentPacketNumber, lastAckedPacketNumber, now, bytesPerAck)
+				// |extra_acked| should be 0 if either
+				// [1] We are at the beginning of a aggregation epoch(bytes==0) and the
+				//     the current tracker implementation can identify it, or
+				// [2] We are not really aggregating acks.
+				if (bytes == 0 && expectNewAggregationEpoch) || (aggregationBandwidth == bandwidth) {
+					Expect(extraAcked).To(Equal(protocol.ByteCount(0)))
+				} else {
+					Expect(lastExtraAcked < extraAcked).To(BeTrue())
+				}
+				now.Add(timeBetweenAcks)
+				lastExtraAcked = extraAcked
+			}
+
+			// Advance past the quiet period.
+			now = startTime.Add(totalDuration)
 		}
 	)
 
@@ -59,10 +87,16 @@ var _ = Describe("Max ack height tracker", func() {
 		tracker = newMaxAckHeightTracker(10)
 		tracker.SetAckAggregationBandwidthThreshold(float64(1.8))
 		tracker.SetStartNewAggregationEpochAfterFullRound(true)
+
+		now = time.Time{}.Add(1 * time.Millisecond)
+		rtt = 60 * time.Millisecond
+		bandwidth = Bandwidth(10 * 1000 * 8)
+		lastSentPacketNumber = protocol.InvalidPacketNumber
+		lastAckedPacketNumber = protocol.InvalidPacketNumber
 	})
 
 	It("VeryAggregatedLargeAck", func() {
-		aggregationEpisode(bandwidth, time.Duration(6*time.Millisecond), 1200, true)
+		aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
 	})
 
 	It("VeryAggregatedSmallAcks", func() {
@@ -86,7 +120,7 @@ var _ = Describe("Max ack height tracker", func() {
 	})
 })
 
-var _ = Describe("Bandwidth sampler", func() {
+var _ = Describe("BandwidthSampler", func() {
 	var ()
 
 	BeforeEach(func() {

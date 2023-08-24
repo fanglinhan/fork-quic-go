@@ -142,17 +142,17 @@ func (m *maxAckHeightTracker) Update(
 		m.maxAckHeightFilter.Clear()
 
 		// Reinsert the heights into the filter after recalculating.
-		expectedBytesAcked := BytesFromBandwidthAndTimeDelta(bandwidthEstimate, best.timeDelta)
+		expectedBytesAcked := bytesFromBandwidthAndTimeDelta(bandwidthEstimate, best.timeDelta)
 		if expectedBytesAcked < best.bytesAcked {
 			best.extraAcked = best.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(best, best.round)
 		}
-		expectedBytesAcked = BytesFromBandwidthAndTimeDelta(bandwidthEstimate, secondBest.timeDelta)
+		expectedBytesAcked = bytesFromBandwidthAndTimeDelta(bandwidthEstimate, secondBest.timeDelta)
 		if expectedBytesAcked < secondBest.bytesAcked {
 			secondBest.extraAcked = secondBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(secondBest, secondBest.round)
 		}
-		expectedBytesAcked = BytesFromBandwidthAndTimeDelta(bandwidthEstimate, thirdBest.timeDelta)
+		expectedBytesAcked = bytesFromBandwidthAndTimeDelta(bandwidthEstimate, thirdBest.timeDelta)
 		if expectedBytesAcked < thirdBest.bytesAcked {
 			thirdBest.extraAcked = thirdBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(thirdBest, thirdBest.round)
@@ -840,11 +840,11 @@ func sentPacketToSendTimeState(sentPacket *connectionStateOnSentPacket, sendTime
 
 // BytesFromBandwidthAndTimeDelta calculates the bytes
 // from a bandwidth(bits per second) and a time delta
-func BytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) protocol.ByteCount {
+func bytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) protocol.ByteCount {
 	return (protocol.ByteCount(bandwidth) * protocol.ByteCount(delta)) /
 		(protocol.ByteCount(time.Second) * 8)
 }
 
-func TimeDeltaFromBytesAndBandwidth(bytes protocol.ByteCount, bandwidth Bandwidth) time.Duration {
+func timeDeltaFromBytesAndBandwidth(bytes protocol.ByteCount, bandwidth Bandwidth) time.Duration {
 	return time.Duration(bytes*8) * time.Second / time.Duration(bandwidth)
 }
