@@ -143,13 +143,13 @@ func (p *packetNumberIndexedQueue[T]) IsEmpty() bool {
 }
 
 // NumberOfPresentEntries returns the number of entries in the queue.
-func (p *packetNumberIndexedQueue[T]) NumberOfPresentEntries(packetNumber protocol.PacketNumber) int {
+func (p *packetNumberIndexedQueue[T]) NumberOfPresentEntries() int {
 	return p.numberOfPresentEntries
 }
 
 // EntrySlotsUsed returns the number of entries allocated in the underlying deque.  This is
 // proportional to the memory usage of the queue.
-func (p *packetNumberIndexedQueue[T]) EntrySlotsUsed(packetNumber protocol.PacketNumber) int {
+func (p *packetNumberIndexedQueue[T]) EntrySlotsUsed() int {
 	return p.entries.Len()
 }
 
