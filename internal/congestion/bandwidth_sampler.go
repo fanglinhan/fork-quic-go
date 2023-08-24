@@ -8,6 +8,11 @@ import (
 	"github.com/quic-go/quic-go/internal/utils/ringbuffer"
 )
 
+const (
+	defaultConnectionStateMapQueueSize = 256
+	defaultCandidatesBufferSize        = 256
+)
+
 type roundTripCount uint64
 
 // SendTimeState is a subset of ConnectionStateOnSentPacket which is returned
@@ -466,7 +471,7 @@ type bandwidthSampler struct {
 
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
-	connectionStateMap packetNumberIndexedQueue[connectionStateOnSentPacket]
+	connectionStateMap *packetNumberIndexedQueue[connectionStateOnSentPacket]
 
 	recentAckPoints recentAckPoints
 	a0Candidates    ringbuffer.RingBuffer[ackPoint]
@@ -485,9 +490,14 @@ type bandwidthSampler struct {
 }
 
 func newBandwidthSampler(maxAckHeightTrackerWindowLength roundTripCount) *bandwidthSampler {
-	return &bandwidthSampler{
+	b := &bandwidthSampler{
 		maxAckHeightTracker: newMaxAckHeightTracker(maxAckHeightTrackerWindowLength),
+		connectionStateMap:  newPacketNumberIndexedQueue[connectionStateOnSentPacket](defaultConnectionStateMapQueueSize),
 	}
+
+	b.a0Candidates.Init(defaultCandidatesBufferSize)
+
+	return b
 }
 
 func (b *bandwidthSampler) MaxAckHeight() protocol.ByteCount {
