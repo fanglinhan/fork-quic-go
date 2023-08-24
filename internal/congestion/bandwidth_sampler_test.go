@@ -102,10 +102,10 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
 			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, true)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(3)))
 		} else {
 			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 1200, false)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(2)))
 		}
 	})
 
@@ -116,10 +116,10 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
 			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, true)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(3)))
 		} else {
 			aggregationEpisode(bandwidth*20, time.Duration(6*time.Millisecond), 300, false)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(2)))
 		}
 	})
 
@@ -130,10 +130,10 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
 			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, true)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(3)))
 		} else {
 			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 1000, false)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(2)))
 		}
 	})
 
@@ -144,16 +144,16 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 		if tracker.AckAggregationBandwidthThreshold() > float64(1.1) {
 			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, true)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(3)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(3)))
 		} else {
 			aggregationEpisode(bandwidth*2, time.Duration(50*time.Millisecond), 100, false)
-			Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+			Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(2)))
 		}
 	})
 
 	It("NotAggregated", func() {
 		aggregationEpisode(bandwidth, time.Duration(100*time.Millisecond), 100, true)
-		Expect(uint64(2) < tracker.numAckAggregationEpochs).To(BeTrue())
+		Expect(uint64(2) < tracker.NumAckAggregationEpochs()).To(BeTrue())
 	})
 
 	It("StartNewEpochAfterAFullRound", func() {
@@ -165,7 +165,7 @@ var _ = Describe("MaxAckHeightTracker", func() {
 		// in turn causes the current epoch to continue if the |tracker_| doesn't
 		// check the packet numbers.
 		tracker.Update(bandwidth/10, true, getRoundTripCount(), lastSentPacketNumber, lastAckedPacketNumber, now, 100)
-		Expect(tracker.numAckAggregationEpochs).To(Equal(uint64(2)))
+		Expect(tracker.NumAckAggregationEpochs()).To(Equal(uint64(2)))
 	})
 })
 
