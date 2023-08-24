@@ -553,10 +553,6 @@ func (b *bandwidthSampler) IsOverestimateAvoidanceEnabled() bool {
 	return b.overestimateAvoidance
 }
 
-func (b *bandwidthSampler) RemoveObsoletePackets() {
-	// Do nothing
-}
-
 func (b *bandwidthSampler) OnPacketSent(
 	sentTime time.Time,
 	bytesInFlight protocol.ByteCount,
@@ -690,6 +686,15 @@ func (b *bandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber, byte
 func (b *bandwidthSampler) OnAppLimited() {
 	b.isAppLimited = true
 	b.endOfAppLimitedPhase = b.lastSentPacket
+}
+
+func (b *bandwidthSampler) RemoveObsoletePackets(leastUnacked protocol.PacketNumber) {
+	// A packet can become obsolete when it is removed from QuicUnackedPacketMap's
+	// view of inflight before it is acked or marked as lost. For example, when
+	// QuicSentPacketManager::RetransmitCryptoPackets retransmits a crypto packet,
+	// the packet is removed from QuicUnackedPacketMap's inflight, but is not
+	// marked as acked or lost in the BandwidthSampler.
+	b.connectionStateMap.RemoveUpTo(leastUnacked)
 }
 
 func (b *bandwidthSampler) TotalBytesSent() protocol.ByteCount {

@@ -170,16 +170,15 @@ var _ = Describe("MaxAckHeightTracker", func() {
 })
 
 var _ = Describe("BandwidthSampler", func() {
-	var ()
+	var (
+	//sampler *bandwidthSampler
+	)
 
 	BeforeEach(func() {
-
+		//sampler = newBandwidthSampler(0)
 	})
 
 	It("test", func() {
-		Expect(0).To(Equal(0))
-		Expect(true).To(BeTrue())
-		Expect(func() { panic("") }).To(Panic())
 
 	})
 
