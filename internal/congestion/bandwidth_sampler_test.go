@@ -132,3 +132,13 @@ var _ = Describe("Max ack height tracker", func() {
 
 	})
 })
+
+var _ = Describe("Bandwidth", func() {
+	It("bytes from bandwidth and time delta", func() {
+		Expect(
+			BytesFromBandwidthAndTimeDelta(
+				Bandwidth(80000),
+				100*time.Millisecond,
+			)).To(Equal(protocol.ByteCount(1000)))
+	})
+})

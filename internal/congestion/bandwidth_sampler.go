@@ -1,6 +1,7 @@
 package congestion
 
 import (
+	"math"
 	"time"
 
 	"github.com/quic-go/quic-go/internal/protocol"
@@ -9,6 +10,7 @@ import (
 )
 
 const (
+	infRTT                             = time.Duration(math.MaxInt64)
 	defaultConnectionStateMapQueueSize = 256
 	defaultCandidatesBufferSize        = 256
 )
@@ -140,18 +142,18 @@ func (m *maxAckHeightTracker) Update(
 		m.maxAckHeightFilter.Clear()
 
 		// Reinsert the heights into the filter after recalculating.
-		expectedBytesAcked := bandwidthEstimate * Bandwidth(best.timeDelta)
-		if expectedBytesAcked < Bandwidth(best.bytesAcked) {
+		expectedBytesAcked := BytesFromBandwidthAndTimeDelta(bandwidthEstimate, best.timeDelta)
+		if expectedBytesAcked < best.bytesAcked {
 			best.extraAcked = best.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(best, best.round)
 		}
-		expectedBytesAcked = bandwidthEstimate * Bandwidth(secondBest.timeDelta)
-		if expectedBytesAcked < Bandwidth(secondBest.bytesAcked) {
+		expectedBytesAcked = BytesFromBandwidthAndTimeDelta(bandwidthEstimate, secondBest.timeDelta)
+		if expectedBytesAcked < secondBest.bytesAcked {
 			secondBest.extraAcked = secondBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(secondBest, secondBest.round)
 		}
-		expectedBytesAcked = bandwidthEstimate * Bandwidth(thirdBest.timeDelta)
-		if expectedBytesAcked < Bandwidth(thirdBest.bytesAcked) {
+		expectedBytesAcked = BytesFromBandwidthAndTimeDelta(bandwidthEstimate, thirdBest.timeDelta)
+		if expectedBytesAcked < thirdBest.bytesAcked {
 			thirdBest.extraAcked = thirdBest.bytesAcked - protocol.ByteCount(expectedBytesAcked)
 			m.maxAckHeightFilter.Update(thirdBest, thirdBest.round)
 		}
@@ -834,4 +836,11 @@ func (b *bandwidthSampler) onAckEventEnd(
 func sentPacketToSendTimeState(sentPacket *connectionStateOnSentPacket, sendTimeState *sendTimeState) {
 	*sendTimeState = sentPacket.sendTimeState
 	sendTimeState.isValid = true
+}
+
+// BytesFromBandwidthAndTimeDelta calculates the bytes
+// from a bandwidth(bits per second) and a time delta
+func BytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) protocol.ByteCount {
+	return (protocol.ByteCount(bandwidth) * protocol.ByteCount(delta)) /
+		(protocol.ByteCount(time.Second) * 8)
 }
