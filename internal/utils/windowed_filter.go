@@ -42,7 +42,7 @@ type WindowedFilter[V WindowedFilterValue, T WindowedFilterTime] struct {
 	// Time length of window.
 	windowLength T
 	estimates    []entry[V, T]
-	comparator   func(V, V) bool
+	comparator   func(V, V) int
 }
 
 type entry[V WindowedFilterValue, T WindowedFilterTime] struct {
@@ -52,17 +52,27 @@ type entry[V WindowedFilterValue, T WindowedFilterTime] struct {
 
 // Compares two values and returns true if the first is greater than or equal
 // to the second.
-func MaxFilter[O constraints.Ordered](a, b O) bool {
-	return a >= b
+func MaxFilter[O constraints.Ordered](a, b O) int {
+	if a > b {
+		return 1
+	} else if a < b {
+		return -1
+	}
+	return 0
 }
 
 // Compares two values and returns true if the first is less than or equal
 // to the second.
-func MinFilter[O constraints.Ordered](a, b O) bool {
-	return a <= b
+func MinFilter[O constraints.Ordered](a, b O) int {
+	if a < b {
+		return 1
+	} else if a > b {
+		return -1
+	}
+	return 0
 }
 
-func NewWindowedFilter[V WindowedFilterValue, T WindowedFilterTime](windowLength T, comparator func(V, V) bool) *WindowedFilter[V, T] {
+func NewWindowedFilter[V WindowedFilterValue, T WindowedFilterTime](windowLength T, comparator func(V, V) int) *WindowedFilter[V, T] {
 	return &WindowedFilter[V, T]{
 		windowLength: windowLength,
 		estimates:    make([]entry[V, T], 3, 3),
@@ -93,16 +103,16 @@ func (f *WindowedFilter[V, T]) Update(newSample V, newTime T) {
 	// Reset all estimates if they have not yet been initialized, if new sample
 	// is a new best, or if the newest recorded estimate is too old.
 	if f.estimates[0].sample == *new(V) ||
-		f.comparator(newSample, f.estimates[0].sample) ||
+		f.comparator(newSample, f.estimates[0].sample) >= 0 ||
 		newTime-f.estimates[2].time > f.windowLength {
 		f.Reset(newSample, newTime)
 		return
 	}
 
-	if f.comparator(newSample, f.estimates[1].sample) {
+	if f.comparator(newSample, f.estimates[1].sample) >= 0 {
 		f.estimates[1] = entry[V, T]{newSample, newTime}
 		f.estimates[2] = f.estimates[1]
-	} else if f.comparator(newSample, f.estimates[2].sample) {
+	} else if f.comparator(newSample, f.estimates[2].sample) >= 0 {
 		f.estimates[2] = entry[V, T]{newSample, newTime}
 	}
 
@@ -123,7 +133,7 @@ func (f *WindowedFilter[V, T]) Update(newSample V, newTime T) {
 		}
 		return
 	}
-	if f.estimates[1].sample == f.estimates[0].sample &&
+	if f.comparator(f.estimates[1].sample, f.estimates[0].sample) == 0 &&
 		newTime-f.estimates[1].time > f.windowLength/4 {
 		// A quarter of the window has passed without a better sample, so the
 		// second-best estimate is taken from the second quarter of the window.
@@ -132,7 +142,7 @@ func (f *WindowedFilter[V, T]) Update(newSample V, newTime T) {
 		return
 	}
 
-	if f.estimates[2].sample == f.estimates[1].sample &&
+	if f.comparator(f.estimates[2].sample, f.estimates[1].sample) == 0 &&
 		newTime-f.estimates[2].time > f.windowLength/2 {
 		// We've passed a half of the window without a better estimate, so take
 		// a third-best estimate from the second half of the window.

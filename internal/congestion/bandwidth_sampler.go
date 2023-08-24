@@ -68,8 +68,13 @@ type extraAckedEvent struct {
 	round roundTripCount
 }
 
-func maxExtraAckedEventFunc(a, b extraAckedEvent) bool {
-	return a.extraAcked >= b.extraAcked
+func maxExtraAckedEventFunc(a, b extraAckedEvent) int {
+	if a.extraAcked > b.extraAcked {
+		return 1
+	} else if a.extraAcked < b.extraAcked {
+		return -1
+	}
+	return 0
 }
 
 // BandwidthSample
