@@ -172,18 +172,18 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 var _ = Describe("BandwidthSampler", func() {
 	var (
-		now                      time.Time
-		sampler                  *bandwidthSampler
-		regularPacketSize        protocol.ByteCount
-		samplerAppLimitedAtStart bool
-		bytesInFlight            protocol.ByteCount
-		maxBandwidth             Bandwidth
-		estBandwidthUpperBound   Bandwidth
-		roundTripCount           roundTripCount
+		now               time.Time
+		sampler           *bandwidthSampler
+		regularPacketSize protocol.ByteCount
+		// samplerAppLimitedAtStart bool
+		bytesInFlight          protocol.ByteCount
+		maxBandwidth           Bandwidth
+		estBandwidthUpperBound Bandwidth
+		roundTripCount         roundTripCount
 
-		packetsToBytes = func(packetCount int) protocol.ByteCount {
-			return protocol.ByteCount(packetCount) * kRegularPacketSize
-		}
+		// packetsToBytes = func(packetCount int) protocol.ByteCount {
+		// 	return protocol.ByteCount(packetCount) * kRegularPacketSize
+		// }
 
 		getPacketSize = func(packetNumber protocol.PacketNumber) protocol.ByteCount {
 			return sampler.connectionStateMap.GetEntry(packetNumber).size
@@ -236,63 +236,63 @@ var _ = Describe("BandwidthSampler", func() {
 			return sample.bandwidth
 		}
 
-		makeLostPacket = func(packetNumber protocol.PacketNumber) protocol.LostPacketInfo {
-			return protocol.LostPacketInfo{
-				PacketNumber: packetNumber,
-				BytesLost:    getPacketSize(packetNumber),
-			}
-		}
+		// makeLostPacket = func(packetNumber protocol.PacketNumber) protocol.LostPacketInfo {
+		// 	return protocol.LostPacketInfo{
+		// 		PacketNumber: packetNumber,
+		// 		BytesLost:    getPacketSize(packetNumber),
+		// 	}
+		// }
 
-		losePacket = func(packetNumber protocol.PacketNumber) sendTimeState {
-			size := getPacketSize(packetNumber)
-			bytesInFlight -= size
-			lostPacket := makeLostPacket(packetNumber)
-			sample := sampler.OnCongestionEvent(now, nil, []protocol.LostPacketInfo{lostPacket},
-				maxBandwidth, estBandwidthUpperBound, roundTripCount)
+		// losePacket = func(packetNumber protocol.PacketNumber) sendTimeState {
+		// 	size := getPacketSize(packetNumber)
+		// 	bytesInFlight -= size
+		// 	lostPacket := makeLostPacket(packetNumber)
+		// 	sample := sampler.OnCongestionEvent(now, nil, []protocol.LostPacketInfo{lostPacket},
+		// 		maxBandwidth, estBandwidthUpperBound, roundTripCount)
 
-			Expect(sample.lastPacketSendState.isValid).To(BeTrue())
-			Expect(sample.sampleMaxBandwidth).To(Equal(Bandwidth(0)))
-			Expect(sample.sampleRtt).To(Equal(infRTT))
-			return sample.lastPacketSendState
-		}
+		// 	Expect(sample.lastPacketSendState.isValid).To(BeTrue())
+		// 	Expect(sample.sampleMaxBandwidth).To(Equal(Bandwidth(0)))
+		// 	Expect(sample.sampleRtt).To(Equal(infRTT))
+		// 	return sample.lastPacketSendState
+		// }
 
-		onCongestionEvent = func(ackedPacketNumbers, lostPacketNumbers []protocol.PacketNumber) congestionEventSample {
-			ackedPackets := []protocol.AckedPacketInfo{}
-			for _, packetNumber := range ackedPacketNumbers {
-				ackedPacket := makeAckedPacket(packetNumber)
-				ackedPackets = append(ackedPackets, makeAckedPacket(packetNumber))
-				bytesInFlight -= ackedPacket.BytesAcked
-			}
-			lostPackets := []protocol.LostPacketInfo{}
-			for _, packetNumber := range lostPacketNumbers {
-				lostPacket := makeLostPacket(packetNumber)
-				lostPackets = append(lostPackets, lostPacket)
-				bytesInFlight -= lostPacket.BytesLost
-			}
+		// onCongestionEvent = func(ackedPacketNumbers, lostPacketNumbers []protocol.PacketNumber) congestionEventSample {
+		// 	ackedPackets := []protocol.AckedPacketInfo{}
+		// 	for _, packetNumber := range ackedPacketNumbers {
+		// 		ackedPacket := makeAckedPacket(packetNumber)
+		// 		ackedPackets = append(ackedPackets, makeAckedPacket(packetNumber))
+		// 		bytesInFlight -= ackedPacket.BytesAcked
+		// 	}
+		// 	lostPackets := []protocol.LostPacketInfo{}
+		// 	for _, packetNumber := range lostPacketNumbers {
+		// 		lostPacket := makeLostPacket(packetNumber)
+		// 		lostPackets = append(lostPackets, lostPacket)
+		// 		bytesInFlight -= lostPacket.BytesLost
+		// 	}
 
-			sample := sampler.OnCongestionEvent(now, ackedPackets, lostPackets,
-				maxBandwidth, estBandwidthUpperBound, roundTripCount)
-			maxBandwidth = utils.Max(maxBandwidth, sample.sampleMaxBandwidth)
-			return sample
-		}
+		// 	sample := sampler.OnCongestionEvent(now, ackedPackets, lostPackets,
+		// 		maxBandwidth, estBandwidthUpperBound, roundTripCount)
+		// 	maxBandwidth = utils.Max(maxBandwidth, sample.sampleMaxBandwidth)
+		// 	return sample
+		// }
 
 		// Sends one packet and acks it.  Then, send 20 packets.  Finally, send
 		// another 20 packets while acknowledging previous 20.
-		send40PacketsAndAckFirst20 = func(timeBetweenPackets time.Duration) {
-			// Send 20 packets at a constant inter-packet time.
-			for i := 1; i <= 20; i++ {
-				sendPacket(protocol.PacketNumber(i))
-				now = now.Add(timeBetweenPackets)
-			}
+		// send40PacketsAndAckFirst20 = func(timeBetweenPackets time.Duration) {
+		// 	// Send 20 packets at a constant inter-packet time.
+		// 	for i := 1; i <= 20; i++ {
+		// 		sendPacket(protocol.PacketNumber(i))
+		// 		now = now.Add(timeBetweenPackets)
+		// 	}
 
-			// Ack packets 1 to 20, while sending new packets at the same rate as
-			// before.
-			for i := 1; i <= 20; i++ {
-				ackPacket(protocol.PacketNumber(i))
-				sendPacket(protocol.PacketNumber(i + 20))
-				now = now.Add(timeBetweenPackets)
-			}
-		}
+		// 	// Ack packets 1 to 20, while sending new packets at the same rate as
+		// 	// before.
+		// 	for i := 1; i <= 20; i++ {
+		// 		ackPacket(protocol.PacketNumber(i))
+		// 		sendPacket(protocol.PacketNumber(i + 20))
+		// 		now = now.Add(timeBetweenPackets)
+		// 	}
+		// }
 
 		testParameters = []struct {
 			overestimateAvoidance bool
@@ -311,7 +311,7 @@ var _ = Describe("BandwidthSampler", func() {
 			now = time.Time{}.Add(1 * time.Second)
 			sampler = newBandwidthSampler(0)
 			regularPacketSize = protocol.ByteCount(1280)
-			samplerAppLimitedAtStart = false
+			// samplerAppLimitedAtStart = false
 			bytesInFlight = protocol.ByteCount(0)
 			maxBandwidth = 0
 			estBandwidthUpperBound = infBandwidth
@@ -323,10 +323,36 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	)
 
+	// Test the sampler in a simple stop-and-wait sender setting.
 	It("SendAndWait", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 10 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 100 * BytesPerSecond
+
+			// Send packets at the constant bandwidth.
+			for i := 1; i < 20; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+				currentSample := ackPacket(protocol.PacketNumber(i))
+				Expect(expectedBandwidth).To(Equal(currentSample))
+			}
+
+			// Send packets at the exponentially decreasing bandwidth.
+			for i := 20; i < 25; i++ {
+				timeBetweenPackets *= 2
+				expectedBandwidth /= 2
+
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+				currentSample := ackPacket(protocol.PacketNumber(i))
+				Expect(expectedBandwidth).To(Equal(currentSample))
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(25))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(int(0)))
+			Expect(bytesInFlight).To(Equal(int(protocol.ByteCount(0))))
 		}
 	})
 
