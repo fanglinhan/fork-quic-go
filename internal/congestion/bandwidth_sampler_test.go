@@ -708,10 +708,29 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Test sampler's ability to remove obsolete packets.
 	It("RemoveObsoletePackets", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			for i := 1; i <= 5; i++ {
+				sendPacket(protocol.PacketNumber(i))
+			}
+
+			now = now.Add(100 * time.Millisecond)
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(5))
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(4))
+			Expect(getNumberOfTrackedPackets()).To(Equal(2))
+			losePacket(protocol.PacketNumber(4))
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(5))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(1))
+			ackPacket(protocol.PacketNumber(5))
+
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(6))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
 		}
 	})
 
