@@ -727,13 +727,13 @@ func (b *bandwidthSampler) chooseA0Point(totalBytesAcked protocol.ByteCount, a0 
 	}
 
 	if b.a0Candidates.Len() == 1 {
-		a0 = b.a0Candidates.Front()
+		*a0 = *b.a0Candidates.Front()
 		return true
 	}
 
 	for i := 1; i < b.a0Candidates.Len(); i++ {
 		if b.a0Candidates.Offset(i).totalBytesAcked > totalBytesAcked {
-			a0 = b.a0Candidates.Offset(i - 1)
+			*a0 = *b.a0Candidates.Offset(i - 1)
 			if i > 1 {
 				for j := 0; j < i-1; j++ {
 					b.a0Candidates.PopFront()
@@ -743,7 +743,7 @@ func (b *bandwidthSampler) chooseA0Point(totalBytesAcked protocol.ByteCount, a0 
 		}
 	}
 
-	a0 = b.a0Candidates.Back()
+	*a0 = *b.a0Candidates.Back()
 	for k := 0; k < b.a0Candidates.Len()-1; k++ {
 		b.a0Candidates.PopFront()
 	}
