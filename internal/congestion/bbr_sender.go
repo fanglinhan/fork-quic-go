@@ -321,7 +321,7 @@ func (b *bbrSender) OnPacketSent(
 		b.exitingQuiescence = true
 	}
 
-	b.sampler.OnPacketSent(sentTime, bytesInFlight, packetNumber, bytes, isRetransmittable)
+	b.sampler.OnPacketSent(sentTime, packetNumber, bytes, bytesInFlight, isRetransmittable)
 }
 
 // CanSend implements the SendAlgorithm interface.

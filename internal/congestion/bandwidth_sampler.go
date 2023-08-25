@@ -555,9 +555,9 @@ func (b *bandwidthSampler) IsOverestimateAvoidanceEnabled() bool {
 
 func (b *bandwidthSampler) OnPacketSent(
 	sentTime time.Time,
-	bytesInFlight protocol.ByteCount,
 	packetNumber protocol.PacketNumber,
 	bytes protocol.ByteCount,
+	bytesInFlight protocol.ByteCount,
 	isRetransmittable bool) {
 	b.lastSentPacket = packetNumber
 
