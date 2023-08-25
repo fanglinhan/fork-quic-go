@@ -671,10 +671,40 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Test the samples taken at the first flight of packets sent.
 	It("FirstRoundTrip", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			rtt := 800 * time.Millisecond
+			numPackets := 10
+			numBytes := regularPacketSize * protocol.ByteCount(numPackets)
+			realBandwidth := BandwidthFromDelta(numBytes, rtt)
+
+			for i := 1; i <= 10; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			now = now.Add(rtt - time.Duration(numPackets)*timeBetweenPackets)
+
+			var lastSample Bandwidth
+			for i := 1; i <= 10; i++ {
+				sample := ackPacket(protocol.PacketNumber(i))
+				Expect(sample > lastSample).To(BeTrue())
+				lastSample = sample
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// The final measured sample for the first flight of sample is expected to be
+			// smaller than the real bandwidth, yet it should not lose more than 10%. The
+			// specific value of the error depends on the difference between the RTT and
+			// the time it takes to exhaust the congestion window (i.e. in the limit when
+			// all packets are sent simultaneously, last sample would indicate the real
+			// bandwidth).
+			Expect(lastSample < realBandwidth).To(BeTrue())
+			Expect(lastSample > realBandwidth*9/10).To(BeTrue())
 		}
 	})
 
