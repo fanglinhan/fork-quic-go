@@ -542,10 +542,34 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Simulate a situation where ACKs arrive in burst and earlier than usual, thus
+	// producing an ACK rate which is higher than the original send rate.
 	It("CompressedAck", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 1000 * BytesPerSecond
+
+			send40PacketsAndAckFirst20(timeBetweenPackets)
+
+			// Simulate an RTT somewhat lower than the one for 1-to-21 transmission.
+			now = now.Add(timeBetweenPackets * 15)
+
+			// Ack the packets 21 to 40 almost immediately at once.
+			var lastBandwidth Bandwidth
+			ridiculouslySmallTimeDelta := 20 * time.Microsecond
+			for i := 21; i <= 40; i++ {
+				lastBandwidth = ackPacket(protocol.PacketNumber(i))
+
+				now = now.Add(ridiculouslySmallTimeDelta)
+			}
+			Expect(expectedBandwidth).To(Equal(lastBandwidth))
+
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(41))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
