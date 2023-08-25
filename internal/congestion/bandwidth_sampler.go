@@ -761,7 +761,8 @@ func (b *bandwidthSampler) onPacketAcknowledged(ackTime time.Time, packetNumber 
 	// OnPacketAcknowledgedInner
 	b.totalBytesAcked += sentPacketPointer.size
 	b.totalBytesSentAtLastAckedPacket = sentPacketPointer.sendTimeState.totalBytesSent
-	b.lastAckedPacketSentTime = ackTime
+	b.lastAckedPacketSentTime = sentPacketPointer.sentTime
+	b.lastAckedPacketAckTime = ackTime
 	if b.overestimateAvoidance {
 		b.recentAckPoints.Update(ackTime, b.totalBytesAcked)
 	}

@@ -177,9 +177,9 @@ var _ = Describe("BandwidthSampler", func() {
 		regularPacketSize protocol.ByteCount
 		// samplerAppLimitedAtStart bool
 		bytesInFlight          protocol.ByteCount
-		maxBandwidth           Bandwidth
+		maxBandwidth           Bandwidth // Max observed bandwidth from acks.
 		estBandwidthUpperBound Bandwidth
-		roundTripCount         roundTripCount
+		roundTripCount         roundTripCount // Needed to calculate extra_acked.
 
 		// packetsToBytes = func(packetCount int) protocol.ByteCount {
 		// 	return protocol.ByteCount(packetCount) * kRegularPacketSize
@@ -308,6 +308,7 @@ var _ = Describe("BandwidthSampler", func() {
 		initial = func(param struct {
 			overestimateAvoidance bool
 		}) {
+			// Ensure that the clock does not start at zero.
 			now = time.Time{}.Add(1 * time.Second)
 			sampler = newBandwidthSampler(0)
 			regularPacketSize = protocol.ByteCount(1280)
