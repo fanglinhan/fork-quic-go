@@ -181,9 +181,9 @@ var _ = Describe("BandwidthSampler", func() {
 		estBandwidthUpperBound Bandwidth
 		roundTripCount         roundTripCount // Needed to calculate extra_acked.
 
-		// packetsToBytes = func(packetCount int) protocol.ByteCount {
-		// 	return protocol.ByteCount(packetCount) * kRegularPacketSize
-		// }
+		packetsToBytes = func(packetCount int) protocol.ByteCount {
+			return protocol.ByteCount(packetCount) * regularPacketSize
+		}
 
 		getPacketSize = func(packetNumber protocol.PacketNumber) protocol.ByteCount {
 			return sampler.connectionStateMap.GetEntry(packetNumber).size
@@ -236,25 +236,25 @@ var _ = Describe("BandwidthSampler", func() {
 			return sample.bandwidth
 		}
 
-		// makeLostPacket = func(packetNumber protocol.PacketNumber) protocol.LostPacketInfo {
-		// 	return protocol.LostPacketInfo{
-		// 		PacketNumber: packetNumber,
-		// 		BytesLost:    getPacketSize(packetNumber),
-		// 	}
-		// }
+		makeLostPacket = func(packetNumber protocol.PacketNumber) protocol.LostPacketInfo {
+			return protocol.LostPacketInfo{
+				PacketNumber: packetNumber,
+				BytesLost:    getPacketSize(packetNumber),
+			}
+		}
 
-		// losePacket = func(packetNumber protocol.PacketNumber) sendTimeState {
-		// 	size := getPacketSize(packetNumber)
-		// 	bytesInFlight -= size
-		// 	lostPacket := makeLostPacket(packetNumber)
-		// 	sample := sampler.OnCongestionEvent(now, nil, []protocol.LostPacketInfo{lostPacket},
-		// 		maxBandwidth, estBandwidthUpperBound, roundTripCount)
+		losePacket = func(packetNumber protocol.PacketNumber) sendTimeState {
+			size := getPacketSize(packetNumber)
+			bytesInFlight -= size
+			lostPacket := makeLostPacket(packetNumber)
+			sample := sampler.OnCongestionEvent(now, nil, []protocol.LostPacketInfo{lostPacket},
+				maxBandwidth, estBandwidthUpperBound, roundTripCount)
 
-		// 	Expect(sample.lastPacketSendState.isValid).To(BeTrue())
-		// 	Expect(sample.sampleMaxBandwidth).To(Equal(Bandwidth(0)))
-		// 	Expect(sample.sampleRtt).To(Equal(infRTT))
-		// 	return sample.lastPacketSendState
-		// }
+			Expect(sample.lastPacketSendState.isValid).To(BeTrue())
+			Expect(sample.sampleMaxBandwidth).To(Equal(Bandwidth(0)))
+			Expect(sample.sampleRtt).To(Equal(infRTT))
+			return sample.lastPacketSendState
+		}
 
 		// onCongestionEvent = func(ackedPacketNumbers, lostPacketNumbers []protocol.PacketNumber) congestionEventSample {
 		// 	ackedPackets := []protocol.AckedPacketInfo{}
@@ -361,6 +361,65 @@ var _ = Describe("BandwidthSampler", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 10 * time.Millisecond
+
+			// Send packets 1-5.
+			for i := 1; i <= 5; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				Expect(packetsToBytes(i)).To(Equal(sampler.TotalBytesSent()))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack packet 1.
+			sendTimeState := ackPacketInner(protocol.PacketNumber(1)).stateAtSend
+			Expect(packetsToBytes(1)).To(Equal(sendTimeState.totalBytesSent))
+			Expect(sendTimeState.totalBytesAcked).To(Equal(protocol.ByteCount(0)))
+			Expect(sendTimeState.totalBytesLost).To(Equal(protocol.ByteCount(0)))
+			Expect(packetsToBytes(1)).To(Equal(sampler.TotalBytesAcked()))
+
+			// Lose packet 2.
+			sendTimeState = losePacket(protocol.PacketNumber(2))
+			Expect(packetsToBytes(2)).To(Equal(sendTimeState.totalBytesSent))
+			Expect(sendTimeState.totalBytesAcked).To(Equal(protocol.ByteCount(0)))
+			Expect(sendTimeState.totalBytesLost).To(Equal(protocol.ByteCount(0)))
+			Expect(packetsToBytes(1)).To(Equal(sampler.TotalBytesLost()))
+
+			// Lose packet 3.
+			sendTimeState = losePacket(protocol.PacketNumber(3))
+			Expect(packetsToBytes(3)).To(Equal(sendTimeState.totalBytesSent))
+			Expect(sendTimeState.totalBytesAcked).To(Equal(protocol.ByteCount(0)))
+			Expect(sendTimeState.totalBytesLost).To(Equal(protocol.ByteCount(0)))
+			Expect(packetsToBytes(2)).To(Equal(sampler.TotalBytesLost()))
+
+			// Send packets 6-10.
+			for i := 6; i <= 10; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				Expect(packetsToBytes(i)).To(Equal(sampler.TotalBytesSent()))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack all inflight packets.
+			ackedPacketCount := 1
+			Expect(packetsToBytes(ackedPacketCount)).To(Equal(sampler.TotalBytesAcked()))
+			for i := 4; i <= 10; i++ {
+				sendTimeState = ackPacketInner(protocol.PacketNumber(i)).stateAtSend
+				ackedPacketCount++
+				Expect(packetsToBytes(ackedPacketCount)).To(Equal(sampler.TotalBytesAcked()))
+				Expect(packetsToBytes(i)).To(Equal(sendTimeState.totalBytesSent))
+				if i <= 5 {
+					Expect(sendTimeState.totalBytesAcked).To(Equal(protocol.ByteCount(0)))
+					Expect(sendTimeState.totalBytesLost).To(Equal(protocol.ByteCount(0)))
+				} else {
+					Expect(sendTimeState.totalBytesAcked).To(Equal(packetsToBytes(1)))
+					Expect(sendTimeState.totalBytesLost).To(Equal(packetsToBytes(2)))
+				}
+
+				// This equation works because there is no neutered bytes.
+				Expect(sendTimeState.totalBytesSent - sendTimeState.totalBytesAcked - sendTimeState.totalBytesLost).
+					To(Equal(sendTimeState.bytesInFlight))
+
+				now = now.Add(timeBetweenPackets)
+			}
 		}
 	})
 
