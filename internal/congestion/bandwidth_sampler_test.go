@@ -172,14 +172,14 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 var _ = Describe("BandwidthSampler", func() {
 	var (
-		now               time.Time
-		sampler           *bandwidthSampler
-		regularPacketSize protocol.ByteCount
-		// samplerAppLimitedAtStart bool
-		bytesInFlight          protocol.ByteCount
-		maxBandwidth           Bandwidth // Max observed bandwidth from acks.
-		estBandwidthUpperBound Bandwidth
-		roundTripCount         roundTripCount // Needed to calculate extra_acked.
+		now                      time.Time
+		sampler                  *bandwidthSampler
+		regularPacketSize        protocol.ByteCount
+		samplerAppLimitedAtStart bool
+		bytesInFlight            protocol.ByteCount
+		maxBandwidth             Bandwidth // Max observed bandwidth from acks.
+		estBandwidthUpperBound   Bandwidth
+		roundTripCount           roundTripCount // Needed to calculate extra_acked.
 
 		packetsToBytes = func(packetCount int) protocol.ByteCount {
 			return protocol.ByteCount(packetCount) * regularPacketSize
@@ -312,7 +312,7 @@ var _ = Describe("BandwidthSampler", func() {
 			now = time.Time{}.Add(1 * time.Second)
 			sampler = newBandwidthSampler(0)
 			regularPacketSize = protocol.ByteCount(1280)
-			// samplerAppLimitedAtStart = false
+			samplerAppLimitedAtStart = false
 			bytesInFlight = protocol.ByteCount(0)
 			maxBandwidth = 0
 			estBandwidthUpperBound = infBandwidth
@@ -561,7 +561,6 @@ var _ = Describe("BandwidthSampler", func() {
 			ridiculouslySmallTimeDelta := 20 * time.Microsecond
 			for i := 21; i <= 40; i++ {
 				lastBandwidth = ackPacket(protocol.PacketNumber(i))
-
 				now = now.Add(ridiculouslySmallTimeDelta)
 			}
 			Expect(expectedBandwidth).To(Equal(lastBandwidth))
@@ -602,14 +601,73 @@ var _ = Describe("BandwidthSampler", func() {
 
 			Expect(getNumberOfTrackedPackets()).To(Equal(0))
 			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
-
 		}
 	})
 
+	// Test the app-limited logic.
 	It("AppLimited", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 1000 * BytesPerSecond
+
+			// Send 20 packets at a constant inter-packet time.
+			for i := 1; i <= 20; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack packets 1 to 20, while sending new packets at the same rate as
+			// before.
+			for i := 1; i <= 20; i++ {
+				sample := ackPacketInner(protocol.PacketNumber(i))
+				Expect(sample.stateAtSend.isAppLimited).To(Equal(samplerAppLimitedAtStart))
+				sendPacket(protocol.PacketNumber(i + 20))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// We are now app-limited. Ack 21 to 40 as usual, but do not send anything for
+			// now.
+			sampler.OnAppLimited()
+			for i := 21; i <= 40; i++ {
+				sample := ackPacketInner(protocol.PacketNumber(i))
+				Expect(sample.stateAtSend.isAppLimited).To(BeFalse())
+				Expect(expectedBandwidth).To(Equal(sample.bandwidth))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Enter quiescence.
+			now = now.Add(1 * time.Second)
+
+			// Send packets 41 to 60, all of which would be marked as app-limited.
+			for i := 41; i <= 60; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack packets 41 to 60, while sending packets 61 to 80.  41 to 60 should be
+			// app-limited and underestimate the bandwidth due to that.
+			for i := 41; i <= 60; i++ {
+				sample := ackPacketInner(protocol.PacketNumber(i))
+				Expect(sample.stateAtSend.isAppLimited).To(BeTrue())
+				Expect(sample.bandwidth < expectedBandwidth*7/10).To(BeTrue())
+				sendPacket(protocol.PacketNumber(i + 20))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Run out of packets, and then ack packet 61 to 80, all of which should have
+			// correct non-app-limited samples.
+			for i := 61; i <= 80; i++ {
+				sample := ackPacketInner(protocol.PacketNumber(i))
+				Expect(sample.stateAtSend.isAppLimited).To(BeFalse())
+				Expect(expectedBandwidth).To(Equal(sample.bandwidth))
+				now = now.Add(timeBetweenPackets)
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(81))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
