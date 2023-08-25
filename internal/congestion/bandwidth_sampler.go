@@ -773,7 +773,7 @@ func (b *bandwidthSampler) onPacketAcknowledged(ackTime time.Time, packetNumber 
 		// packets are sent while there are buffered packets or pending data.
 		// (2) The current acked packet is after the sent packet marked as the end
 		// of the app limit phase.
-		if b.endOfAppLimitedPhase != protocol.InvalidPacketNumber ||
+		if b.endOfAppLimitedPhase == protocol.InvalidPacketNumber ||
 			packetNumber > b.endOfAppLimitedPhase {
 			b.isAppLimited = false
 		}
