@@ -799,7 +799,7 @@ var _ = Describe("BandwidthSampler", func() {
 				sample := onCongestionEvent([]protocol.PacketNumber{
 					protocol.PacketNumber(i - 1),
 					protocol.PacketNumber(i),
-				}, nil)
+				}, []protocol.PacketNumber{})
 
 				Expect(sendingRate == sample.sampleMaxBandwidth).To(BeTrue())
 				Expect(timeBetweenPackets == sample.sampleRtt).To(BeTrue())
@@ -818,6 +818,33 @@ var _ = Describe("BandwidthSampler", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 10 * time.Millisecond
+			sendingRate := BandwidthFromDelta(regularPacketSize, timeBetweenPackets)
+
+			for i := 1; i < 21; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+				if i%2 != 0 {
+					continue
+				}
+
+				// Ack packet i and lose i-1.
+				sample := onCongestionEvent([]protocol.PacketNumber{
+					protocol.PacketNumber(i),
+				}, []protocol.PacketNumber{
+					protocol.PacketNumber(i - 1),
+				})
+				// Losing 50% packets means sending rate is twice the bandwidth.
+				Expect(sendingRate == sample.sampleMaxBandwidth*2).To(BeTrue())
+				Expect(timeBetweenPackets == sample.sampleRtt).To(BeTrue())
+				Expect(regularPacketSize == sample.sampleMaxInflight).To(BeTrue())
+				Expect(sample.lastPacketSendState.isValid).To(BeTrue())
+				Expect(2*regularPacketSize == sample.lastPacketSendState.bytesInFlight).To(BeTrue())
+				Expect(protocol.ByteCount(i)*regularPacketSize == sample.lastPacketSendState.totalBytesSent).To(BeTrue())
+				Expect(protocol.ByteCount(i-2)*regularPacketSize/2 == sample.lastPacketSendState.totalBytesAcked).To(BeTrue())
+				Expect(protocol.ByteCount(i-2)*regularPacketSize/2 == sample.lastPacketSendState.totalBytesLost).To(BeTrue())
+				sampler.RemoveObsoletePackets(protocol.PacketNumber(i - 2))
+			}
 		}
 	})
 
@@ -825,6 +852,35 @@ var _ = Describe("BandwidthSampler", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 10 * time.Millisecond
+			firstPacketSendingRate := BandwidthFromDelta(regularPacketSize, timeBetweenPackets)
+
+			// Send packets 1 to 4 and ack packet 1.
+			sendPacket(protocol.PacketNumber(1))
+			now = now.Add(timeBetweenPackets)
+			sendPacket(protocol.PacketNumber(2))
+			sendPacket(protocol.PacketNumber(3))
+			sendPacket(protocol.PacketNumber(4))
+			sample := onCongestionEvent([]protocol.PacketNumber{
+				protocol.PacketNumber(1),
+			}, []protocol.PacketNumber{})
+			Expect(firstPacketSendingRate == sample.sampleMaxBandwidth).To(BeTrue())
+			Expect(firstPacketSendingRate == maxBandwidth).To(BeTrue())
+
+			// Ack packet 2, 3 and 4, all of which uses S(1) to calculate ack rate since
+			// there were no acks at the time they were sent.
+			roundTripCount++
+			estBandwidthUpperBound = firstPacketSendingRate * 3 / 10
+			now = now.Add(timeBetweenPackets)
+			sample = onCongestionEvent([]protocol.PacketNumber{
+				protocol.PacketNumber(2),
+				protocol.PacketNumber(3),
+				protocol.PacketNumber(4),
+			}, []protocol.PacketNumber{})
+			Expect(firstPacketSendingRate*2 == sample.sampleMaxBandwidth).To(BeTrue())
+			Expect(sample.sampleMaxBandwidth == maxBandwidth).To(BeTrue())
+
+			Expect(2*regularPacketSize < sample.extraAcked).To(BeTrue())
 		}
 	})
 })
