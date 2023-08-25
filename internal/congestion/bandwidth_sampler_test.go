@@ -352,7 +352,7 @@ var _ = Describe("BandwidthSampler", func() {
 			sampler.RemoveObsoletePackets(protocol.PacketNumber(25))
 
 			Expect(getNumberOfTrackedPackets()).To(Equal(int(0)))
-			Expect(bytesInFlight).To(Equal(int(protocol.ByteCount(0))))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
