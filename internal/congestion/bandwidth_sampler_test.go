@@ -738,6 +738,30 @@ var _ = Describe("BandwidthSampler", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			sendPacket(protocol.PacketNumber(1))
+			Expect(sampler.TotalBytesNeutered()).To(Equal(protocol.ByteCount(0)))
+
+			now = now.Add(10 * time.Millisecond)
+			sampler.OnPacketNeutered(protocol.PacketNumber(1))
+
+			Expect(sampler.TotalBytesNeutered() > 0).To(BeTrue())
+			Expect(sampler.TotalBytesAcked() == 0).To(BeTrue())
+
+			// If packet 1 is acked it should not produce a bandwidth sample.
+			now = now.Add(10 * time.Millisecond)
+			sample := sampler.OnCongestionEvent(now, []protocol.AckedPacketInfo{{
+				PacketNumber: protocol.PacketNumber(1),
+				BytesAcked:   regularPacketSize,
+				ReceivedTime: now,
+			}}, nil, maxBandwidth, estBandwidthUpperBound, roundTripCount)
+
+			Expect(sampler.TotalBytesAcked() == 0).To(BeTrue())
+			Expect(sample.sampleMaxBandwidth == 0).To(BeTrue())
+
+			Expect(sample.sampleIsAppLimited).To(BeFalse())
+			Expect(sample.sampleRtt == infRTT).To(BeTrue())
+			Expect(sample.sampleMaxInflight == 0).To(BeTrue())
+			Expect(sample.extraAcked == 0).To(BeTrue())
 		}
 	})
 

@@ -683,6 +683,12 @@ func (b *bandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber, byte
 	return s
 }
 
+func (b *bandwidthSampler) OnPacketNeutered(packetNumber protocol.PacketNumber) {
+	b.connectionStateMap.Remove(packetNumber, func(sentPacket connectionStateOnSentPacket) {
+		b.totalBytesNeutered += sentPacket.size
+	})
+}
+
 func (b *bandwidthSampler) OnAppLimited() {
 	b.isAppLimited = true
 	b.endOfAppLimitedPhase = b.lastSentPacket
@@ -707,6 +713,10 @@ func (b *bandwidthSampler) TotalBytesLost() protocol.ByteCount {
 
 func (b *bandwidthSampler) TotalBytesAcked() protocol.ByteCount {
 	return b.totalBytesAcked
+}
+
+func (b *bandwidthSampler) TotalBytesNeutered() protocol.ByteCount {
+	return b.totalBytesNeutered
 }
 
 func (b *bandwidthSampler) IsAppLimited() bool {
