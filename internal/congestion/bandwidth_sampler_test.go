@@ -493,10 +493,52 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Test the sampler in a scenario where the 50% of packets are not
+	// congestion controlled (specifically, non-retransmittable data is not
+	// congestion controlled).  Should be functionally consistent in behavior with
+	// the SendWithLosses test.
 	It("NotCongestionControlled", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 500 * BytesPerSecond
+
+			// Send 20 packets, each 1 ms apart. Every even packet is not congestion
+			// controlled.
+			for i := 1; i <= 20; i++ {
+				sendPacketInner(protocol.PacketNumber(i), regularPacketSize, i%2 == 0)
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ensure only congestion controlled packets are tracked.
+			Expect(getNumberOfTrackedPackets()).To(Equal(10))
+
+			// Ack packets 2 to 21, ignoring every even-numbered packet, while sending new
+			// packets at the same rate as before.
+			for i := 1; i <= 20; i++ {
+				if i%2 == 0 {
+					ackPacket(protocol.PacketNumber(i))
+				}
+				sendPacketInner(protocol.PacketNumber(i+20), regularPacketSize, i%2 == 0)
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack the packets 22 to 41 with the same congestion controlled pattern.
+			var lastBandwidth Bandwidth
+			for i := 21; i <= 40; i++ {
+				if i%2 == 0 {
+					lastBandwidth = ackPacket(protocol.PacketNumber(i))
+					Expect(expectedBandwidth).To(Equal(lastBandwidth))
+				}
+				now = now.Add(timeBetweenPackets)
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(41))
+
+			// Since only congestion controlled packets are entered into the map, it has
+			// to be empty at this point.
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
