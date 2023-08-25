@@ -278,21 +278,21 @@ var _ = Describe("BandwidthSampler", func() {
 
 		// Sends one packet and acks it.  Then, send 20 packets.  Finally, send
 		// another 20 packets while acknowledging previous 20.
-		// send40PacketsAndAckFirst20 = func(timeBetweenPackets time.Duration) {
-		// 	// Send 20 packets at a constant inter-packet time.
-		// 	for i := 1; i <= 20; i++ {
-		// 		sendPacket(protocol.PacketNumber(i))
-		// 		now = now.Add(timeBetweenPackets)
-		// 	}
+		send40PacketsAndAckFirst20 = func(timeBetweenPackets time.Duration) {
+			// Send 20 packets at a constant inter-packet time.
+			for i := 1; i <= 20; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+			}
 
-		// 	// Ack packets 1 to 20, while sending new packets at the same rate as
-		// 	// before.
-		// 	for i := 1; i <= 20; i++ {
-		// 		ackPacket(protocol.PacketNumber(i))
-		// 		sendPacket(protocol.PacketNumber(i + 20))
-		// 		now = now.Add(timeBetweenPackets)
-		// 	}
-		// }
+			// Ack packets 1 to 20, while sending new packets at the same rate as
+			// before.
+			for i := 1; i <= 20; i++ {
+				ackPacket(protocol.PacketNumber(i))
+				sendPacket(protocol.PacketNumber(i + 20))
+				now = now.Add(timeBetweenPackets)
+			}
+		}
 
 		testParameters = []struct {
 			overestimateAvoidance bool
@@ -423,10 +423,28 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Test the sampler during regular windowed sender scenario with fixed
+	// CWND of 20.
 	It("SendPaced", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 1000 * BytesPerSecond
+
+			send40PacketsAndAckFirst20(timeBetweenPackets)
+
+			// Ack the packets 21 to 40, arriving at the correct bandwidth.
+			var lastBandwidth Bandwidth
+			for i := 21; i <= 40; i++ {
+				lastBandwidth = ackPacket(protocol.PacketNumber(i))
+				Expect(expectedBandwidth).To(Equal(lastBandwidth))
+				now = now.Add(timeBetweenPackets)
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(41))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
