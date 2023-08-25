@@ -448,10 +448,48 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Test the sampler in a scenario where 50% of packets is consistently lost.
 	It("SendWithLosses", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 500 * BytesPerSecond
+
+			// Send 20 packets, each 1 ms apart.
+			for i := 1; i <= 20; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack packets 1 to 20, losing every even-numbered packet, while sending new
+			// packets at the same rate as before.
+			for i := 1; i <= 20; i++ {
+				if i%2 == 0 {
+					ackPacket(protocol.PacketNumber(i))
+				} else {
+					losePacket(protocol.PacketNumber(i))
+				}
+				sendPacket(protocol.PacketNumber(i + 20))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			// Ack the packets 21 to 40 with the same loss pattern.
+			var lastBandwidth Bandwidth
+			for i := 21; i <= 40; i++ {
+				if i%2 == 0 {
+					lastBandwidth = ackPacket(protocol.PacketNumber(i))
+					Expect(expectedBandwidth).To(Equal(lastBandwidth))
+				} else {
+					losePacket(protocol.PacketNumber(i))
+				}
+
+				now = now.Add(timeBetweenPackets)
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(41))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 		}
 	})
 
