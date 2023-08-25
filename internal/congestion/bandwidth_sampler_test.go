@@ -573,9 +573,35 @@ var _ = Describe("BandwidthSampler", func() {
 		}
 	})
 
+	// Tests receiving ACK packets in the reverse order.
 	It("ReorderedAck", func() {
 		for _, param := range testParameters {
 			initial(param)
+
+			timeBetweenPackets := 1 * time.Millisecond
+			expectedBandwidth := Bandwidth(regularPacketSize) * 1000 * BytesPerSecond
+
+			send40PacketsAndAckFirst20(timeBetweenPackets)
+
+			// Ack the packets 21 to 40 in the reverse order, while sending packets 41 to
+			// 60.
+			var lastBandwidth Bandwidth
+			for i := 0; i < 20; i++ {
+				lastBandwidth = ackPacket(protocol.PacketNumber(40 - i))
+				Expect(expectedBandwidth).To(Equal(lastBandwidth))
+				sendPacket(protocol.PacketNumber(41 + i))
+				now = now.Add(timeBetweenPackets)
+			}
+
+			for i := 41; i <= 60; i++ {
+				lastBandwidth = ackPacket(protocol.PacketNumber(i))
+				Expect(expectedBandwidth).To(Equal(lastBandwidth))
+				now = now.Add(timeBetweenPackets)
+			}
+			sampler.RemoveObsoletePackets(protocol.PacketNumber(61))
+
+			Expect(getNumberOfTrackedPackets()).To(Equal(0))
+			Expect(bytesInFlight).To(Equal(protocol.ByteCount(0)))
 
 		}
 	})
