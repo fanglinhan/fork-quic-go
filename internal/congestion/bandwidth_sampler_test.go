@@ -256,25 +256,25 @@ var _ = Describe("BandwidthSampler", func() {
 			return sample.lastPacketSendState
 		}
 
-		// onCongestionEvent = func(ackedPacketNumbers, lostPacketNumbers []protocol.PacketNumber) congestionEventSample {
-		// 	ackedPackets := []protocol.AckedPacketInfo{}
-		// 	for _, packetNumber := range ackedPacketNumbers {
-		// 		ackedPacket := makeAckedPacket(packetNumber)
-		// 		ackedPackets = append(ackedPackets, makeAckedPacket(packetNumber))
-		// 		bytesInFlight -= ackedPacket.BytesAcked
-		// 	}
-		// 	lostPackets := []protocol.LostPacketInfo{}
-		// 	for _, packetNumber := range lostPacketNumbers {
-		// 		lostPacket := makeLostPacket(packetNumber)
-		// 		lostPackets = append(lostPackets, lostPacket)
-		// 		bytesInFlight -= lostPacket.BytesLost
-		// 	}
+		onCongestionEvent = func(ackedPacketNumbers, lostPacketNumbers []protocol.PacketNumber) congestionEventSample {
+			ackedPackets := []protocol.AckedPacketInfo{}
+			for _, packetNumber := range ackedPacketNumbers {
+				ackedPacket := makeAckedPacket(packetNumber)
+				ackedPackets = append(ackedPackets, makeAckedPacket(packetNumber))
+				bytesInFlight -= ackedPacket.BytesAcked
+			}
+			lostPackets := []protocol.LostPacketInfo{}
+			for _, packetNumber := range lostPacketNumbers {
+				lostPacket := makeLostPacket(packetNumber)
+				lostPackets = append(lostPackets, lostPacket)
+				bytesInFlight -= lostPacket.BytesLost
+			}
 
-		// 	sample := sampler.OnCongestionEvent(now, ackedPackets, lostPackets,
-		// 		maxBandwidth, estBandwidthUpperBound, roundTripCount)
-		// 	maxBandwidth = utils.Max(maxBandwidth, sample.sampleMaxBandwidth)
-		// 	return sample
-		// }
+			sample := sampler.OnCongestionEvent(now, ackedPackets, lostPackets,
+				maxBandwidth, estBandwidthUpperBound, roundTripCount)
+			maxBandwidth = utils.Max(maxBandwidth, sample.sampleMaxBandwidth)
+			return sample
+		}
 
 		// Sends one packet and acks it.  Then, send 20 packets.  Finally, send
 		// another 20 packets while acknowledging previous 20.
@@ -769,13 +769,48 @@ var _ = Describe("BandwidthSampler", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			// Make sure a default constructed CongestionEventSample has the correct
+			// initial values for BandwidthSampler::OnCongestionEvent() to work.
+			sample := newCongestionEventSample()
+
+			Expect(sample.sampleMaxBandwidth == 0).To(BeTrue())
+			Expect(sample.sampleIsAppLimited).To(BeFalse())
+			Expect(sample.sampleRtt == infRTT).To(BeTrue())
+			Expect(sample.sampleMaxInflight == 0).To(BeTrue())
+			Expect(sample.extraAcked == 0).To(BeTrue())
 		}
 	})
 
+	// 1) Send 2 packets, 2) Ack both in 1 event, 3) Repeat.
 	It("TwoAckedPacketsPerEvent", func() {
 		for _, param := range testParameters {
 			initial(param)
 
+			timeBetweenPackets := 10 * time.Millisecond
+			sendingRate := BandwidthFromDelta(regularPacketSize, timeBetweenPackets)
+
+			for i := 1; i < 21; i++ {
+				sendPacket(protocol.PacketNumber(i))
+				now = now.Add(timeBetweenPackets)
+				if i%2 != 0 {
+					continue
+				}
+
+				sample := onCongestionEvent([]protocol.PacketNumber{
+					protocol.PacketNumber(i - 1),
+					protocol.PacketNumber(i),
+				}, nil)
+
+				Expect(sendingRate == sample.sampleMaxBandwidth).To(BeTrue())
+				Expect(timeBetweenPackets == sample.sampleRtt).To(BeTrue())
+				Expect(2*regularPacketSize == sample.sampleMaxInflight).To(BeTrue())
+				Expect(sample.lastPacketSendState.isValid).To(BeTrue())
+				Expect(2*regularPacketSize == sample.lastPacketSendState.bytesInFlight).To(BeTrue())
+				Expect(protocol.ByteCount(i)*regularPacketSize == sample.lastPacketSendState.totalBytesSent).To(BeTrue())
+				Expect(protocol.ByteCount(i-2)*regularPacketSize == sample.lastPacketSendState.totalBytesAcked).To(BeTrue())
+				Expect(sample.lastPacketSendState.totalBytesLost == 0).To(BeTrue())
+				sampler.RemoveObsoletePackets(protocol.PacketNumber(i - 2))
+			}
 		}
 	})
 
