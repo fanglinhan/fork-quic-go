@@ -171,74 +171,182 @@ var _ = Describe("MaxAckHeightTracker", func() {
 
 var _ = Describe("BandwidthSampler", func() {
 	var (
-	//sampler *bandwidthSampler
+		now                      time.Time
+		sampler                  *bandwidthSampler
+		kRegularPacketSize       protocol.ByteCount
+		samplerAppLimitedAtStart bool
+		bytesInFlight            protocol.ByteCount
+		maxBandwidth             Bandwidth
+		estBandwidthUpperBound   Bandwidth
+		roundTripCount           roundTripCount
+
+		packetsToBytes = func(packetCount int) protocol.ByteCount {
+			return protocol.ByteCount(packetCount) * kRegularPacketSize
+		}
+
+		getPacketSize = func(packetNumber protocol.PacketNumber) protocol.ByteCount {
+			return sampler.connectionStateMap.GetEntry(packetNumber).size
+		}
+
+		getNumberOfTrackedPackets = func() int {
+			return sampler.connectionStateMap.NumberOfPresentEntries()
+		}
+
+		sendPacket = func() {}
+
+		ackPacket = func() {}
+
+		losePacket = func() {}
+
+		makeAckedPacket = func() protocol.AckedPacketInfo {
+
+		}
+
+		makeLostPacket = func() protocol.LostPacketInfo {
+
+		}
+
+		onCongestionEvent = func() congestionEventSample {
+
+		}
+
+		// Sends one packet and acks it.  Then, send 20 packets.  Finally, send
+		// another 20 packets while acknowledging previous 20.
+		send40PacketsAndAckFirst20 = func() {
+
+		}
+
+		testParameters = []struct {
+			overestimateAvoidance bool
+		}{
+			{
+				overestimateAvoidance: false,
+			},
+			{
+				overestimateAvoidance: true,
+			},
+		}
+
+		initial = func(param struct {
+			overestimateAvoidance bool
+		}) {
+			now = time.Time{}.Add(1 * time.Second)
+			sampler = newBandwidthSampler(0)
+			kRegularPacketSize = protocol.ByteCount(1280)
+			samplerAppLimitedAtStart = false
+			bytesInFlight = protocol.ByteCount(0)
+			maxBandwidth = 0
+			estBandwidthUpperBound = infBandwidth
+			roundTripCount = 0
+
+			if param.overestimateAvoidance {
+				sampler.EnableOverestimateAvoidance()
+			}
+		}
 	)
 
-	BeforeEach(func() {
-		//sampler = newBandwidthSampler(0)
-	})
-
-	It("test", func() {
-
-	})
-
 	It("SendAndWait", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("SendTimeState", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("SendPaced", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("SendWithLosses", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("NotCongestionControlled", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("CompressedAck", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("ReorderedAck", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("AppLimited", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("FirstRoundTrip", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("RemoveObsoletePackets", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("NeuterPacket", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("CongestionEventSampleDefaultValues", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("TwoAckedPacketsPerEvent", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("LoseEveryOtherPacket", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 
 	It("AckHeightRespectBandwidthEstimateUpperBound", func() {
+		for _, param := range testParameters {
+			initial(param)
 
+		}
 	})
 })
