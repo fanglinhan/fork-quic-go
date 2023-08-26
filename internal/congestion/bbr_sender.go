@@ -314,6 +314,7 @@ func (b *bbrSender) OnPacketSent(
 	packetNumber protocol.PacketNumber,
 	bytes protocol.ByteCount,
 	isRetransmittable bool) {
+
 	b.lastSentPacket = packetNumber
 	b.bytesInFlight = bytesInFlight
 
@@ -508,7 +509,7 @@ func (b *bbrSender) setDrainGain(drainGain float64) {
 
 // What's the current estimated bandwidth in bytes per second.
 func (b *bbrSender) bandwidthEstimate() Bandwidth {
-	return Bandwidth(b.maxBandwidth.GetBest())
+	return b.maxBandwidth.GetBest()
 }
 
 // Returns the current estimate of the RTT of the connection.  Outside of the
