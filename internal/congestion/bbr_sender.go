@@ -605,7 +605,7 @@ func (b *bbrSender) updateGainCyclePhase(now time.Time, priorInFlight protocol.B
 	// queue which could have been incurred by probing prior to it.  If the number
 	// of bytes in flight falls down to the estimated BDP value earlier, conclude
 	// that the queue has been successfully drained and exit this cycle early.
-	if b.pacingGain < 1.0 && b.bytesInFlight < b.getTargetCongestionWindow(1) {
+	if b.pacingGain < 1.0 && b.bytesInFlight <= b.getTargetCongestionWindow(1) {
 		shouldAdvanceGainCycling = true
 	}
 
@@ -631,7 +631,7 @@ func (b *bbrSender) checkIfFullBandwidthReached(lastPacketSendState *sendTimeSta
 	}
 
 	target := float64(b.bandwidthAtLastRound) * startupGrowthTarget
-	if b.bandwidthEstimate() > Bandwidth(target) {
+	if b.bandwidthEstimate() >= Bandwidth(target) {
 		b.bandwidthAtLastRound = b.bandwidthEstimate()
 		b.roundsWithoutBandwidthGain = 0
 		if b.expireAckAggregationInStartup {
@@ -642,7 +642,7 @@ func (b *bbrSender) checkIfFullBandwidthReached(lastPacketSendState *sendTimeSta
 	}
 
 	b.roundsWithoutBandwidthGain++
-	if b.roundsWithoutBandwidthGain > b.numStartupRtts ||
+	if b.roundsWithoutBandwidthGain >= b.numStartupRtts ||
 		b.shouldExitStartupDueToLoss(lastPacketSendState) {
 		b.isAtFullBandwidth = true
 	}
@@ -687,7 +687,7 @@ func (b *bbrSender) maybeEnterOrExitProbeRtt(now time.Time, isRoundStart, minRtt
 			if isRoundStart {
 				b.probeRttRoundPassed = true
 			}
-			if now.After(b.exitProbeRttAt) && b.probeRttRoundPassed {
+			if now.Sub(b.exitProbeRttAt) >= 0 && b.probeRttRoundPassed {
 				b.minRttTimestamp = now
 				if !b.isAtFullBandwidth {
 					b.enterStartupMode(now)
@@ -744,7 +744,7 @@ func (b *bbrSender) calculatePacingRate(bytesLost protocol.ByteCount) {
 		return
 	}
 
-	targetRate := b.pacingGain * float64(b.bandwidthEstimate())
+	targetRate := Bandwidth(b.pacingGain * float64(b.bandwidthEstimate()))
 	if b.isAtFullBandwidth {
 		b.pacingRate = Bandwidth(targetRate)
 		return
@@ -761,13 +761,13 @@ func (b *bbrSender) calculatePacingRate(bytesLost protocol.ByteCount) {
 		b.bytesLostWhileDetectingOvershooting += bytesLost
 		// Check for overshooting with network parameters adjusted when pacing rate
 		// > target_rate and loss has been detected.
-		if b.pacingRate > Bandwidth(targetRate) && b.bytesLostWhileDetectingOvershooting > 0 {
+		if b.pacingRate > targetRate && b.bytesLostWhileDetectingOvershooting > 0 {
 			if b.hasNoAppLimitedSample ||
 				b.bytesLostWhileDetectingOvershooting*protocol.ByteCount(b.bytesLostMultiplierWhileDetectingOvershooting) > b.initialCongestionWindow {
 				// We are fairly sure overshoot happens if 1) there is at least one
 				// non app-limited bw sample or 2) half of IW gets lost. Slow pacing
 				// rate.
-				b.pacingRate = utils.Max(Bandwidth(targetRate), BandwidthFromDelta(b.cwndToCalculateMinPacingRate, b.rttStats.MinRTT()))
+				b.pacingRate = utils.Max(targetRate, BandwidthFromDelta(b.cwndToCalculateMinPacingRate, b.rttStats.MinRTT()))
 				b.bytesLostWhileDetectingOvershooting = 0
 				b.detectOvershooting = false
 			}
@@ -775,7 +775,7 @@ func (b *bbrSender) calculatePacingRate(bytesLost protocol.ByteCount) {
 	}
 
 	// Do not decrease the pacing rate during startup.
-	b.pacingRate = utils.Max(b.pacingRate, Bandwidth(targetRate))
+	b.pacingRate = utils.Max(b.pacingRate, targetRate)
 }
 
 // Determines the appropriate congestion window for the connection.
@@ -803,7 +803,7 @@ func (b *bbrSender) calculateCongestionWindow(bytesAcked, excessAcked protocol.B
 		b.sampler.TotalBytesAcked() < b.initialCongestionWindow {
 		// If the connection is not yet out of startup phase, do not decrease the
 		// window.
-		b.congestionWindow = b.congestionWindow + bytesAcked
+		b.congestionWindow += bytesAcked
 	}
 
 	// Enforce the limits on the congestion window.

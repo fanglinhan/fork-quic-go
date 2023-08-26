@@ -815,7 +815,7 @@ func (b *bandwidthSampler) onPacketAcknowledged(ackTime time.Time, packetNumber 
 	// During the slope calculation, ensure that ack time of the current packet is
 	// always larger than the time of the previous packet, otherwise division by
 	// zero or integer underflow can occur.
-	if ackTime.Compare(a0.ackTime) != 1 {
+	if ackTime.Sub(a0.ackTime) <= 0 {
 		return *sample
 	}
 
