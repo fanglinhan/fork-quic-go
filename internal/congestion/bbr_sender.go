@@ -526,7 +526,7 @@ func (b *bbrSender) getMinRtt() time.Duration {
 
 // Computes the target congestion window using the specified gain.
 func (b *bbrSender) getTargetCongestionWindow(gain float64) protocol.ByteCount {
-	bdp := protocol.ByteCount(b.getMinRtt()) * protocol.ByteCount(b.bandwidthEstimate())
+	bdp := bdpFromRttAndBandwidth(b.getMinRtt(), b.bandwidthEstimate())
 	congestionWindow := protocol.ByteCount(gain * float64(bdp))
 
 	// BDP estimate will be zero if no bandwidth samples are available yet.
@@ -534,7 +534,7 @@ func (b *bbrSender) getTargetCongestionWindow(gain float64) protocol.ByteCount {
 		congestionWindow = protocol.ByteCount(gain * float64(b.initialCongestionWindow))
 	}
 
-	return utils.Max[protocol.ByteCount](congestionWindow, b.minCongestionWindow)
+	return utils.Max(congestionWindow, b.minCongestionWindow)
 }
 
 // The target congestion window during PROBE_RTT.
@@ -820,7 +820,7 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost protocol.ByteC
 	// Set up the initial recovery window.
 	if b.recoveryWindow == 0 {
 		b.recoveryWindow = b.bytesInFlight + bytesAcked
-		b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
+		b.recoveryWindow = utils.Max(b.minCongestionWindow, b.recoveryWindow)
 		return
 	}
 
@@ -839,8 +839,8 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost protocol.ByteC
 	}
 
 	// Always allow sending at least |bytes_acked| in response.
-	b.recoveryWindow = utils.Max[protocol.ByteCount](b.recoveryWindow, b.bytesInFlight+bytesAcked)
-	b.recoveryWindow = utils.Max[protocol.ByteCount](b.minCongestionWindow, b.recoveryWindow)
+	b.recoveryWindow = utils.Max(b.recoveryWindow, b.bytesInFlight+bytesAcked)
+	b.recoveryWindow = utils.Max(b.minCongestionWindow, b.recoveryWindow)
 }
 
 // Return whether we should exit STARTUP due to excessive loss.
@@ -858,4 +858,8 @@ func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeStat
 		return false
 	}
 	return false
+}
+
+func bdpFromRttAndBandwidth(rtt time.Duration, bandwidth Bandwidth) protocol.ByteCount {
+	return protocol.ByteCount(rtt) * protocol.ByteCount(bandwidth) / protocol.ByteCount(BytesPerSecond) / protocol.ByteCount(time.Second)
 }
