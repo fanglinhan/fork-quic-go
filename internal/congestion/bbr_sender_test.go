@@ -23,12 +23,12 @@ var _ = Describe("", func() {
 	)
 
 	var (
-		sender            *cubicSender
-		clock             mockClock
-		bytesInFlight     protocol.ByteCount
-		packetNumber      protocol.PacketNumber
-		ackedPacketNumber protocol.PacketNumber
-		rttStats          *utils.RTTStats
+		sender        *bbrSender
+		clock         mockClock
+		bytesInFlight protocol.ByteCount
+		packetNumber  protocol.PacketNumber
+		//ackedPacketNumber protocol.PacketNumber
+		rttStats *utils.RTTStats
 	)
 
 	SendAvailableSendWindowLen := func(packetLength protocol.ByteCount) int {
@@ -42,46 +42,45 @@ var _ = Describe("", func() {
 		return packetsSent
 	}
 
-	// Normal is that TCP acks every other segment.
-	AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-		rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
-		sender.MaybeExitSlowStart()
-		for i := 0; i < n; i++ {
-			ackedPacketNumber++
-			sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
-		}
-		bytesInFlight -= protocol.ByteCount(n) * packetLength
-		clock.Advance(time.Millisecond)
-	}
+	// // Normal is that TCP acks every other segment.
+	// AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
+	// 	rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
+	// 	sender.MaybeExitSlowStart()
+	// 	for i := 0; i < n; i++ {
+	// 		ackedPacketNumber++
+	// 		sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
+	// 	}
+	// 	bytesInFlight -= protocol.ByteCount(n) * packetLength
+	// 	clock.Advance(time.Millisecond)
+	// }
 
-	LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-		for i := 0; i < n; i++ {
-			ackedPacketNumber++
-			sender.OnPacketLost(ackedPacketNumber, packetLength, bytesInFlight)
-		}
-		bytesInFlight -= protocol.ByteCount(n) * packetLength
-	}
+	// LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
+	// 	for i := 0; i < n; i++ {
+	// 		ackedPacketNumber++
+	// 		sender.OnPacketLost(ackedPacketNumber, packetLength, bytesInFlight)
+	// 	}
+	// 	bytesInFlight -= protocol.ByteCount(n) * packetLength
+	// }
 
-	// Does not increment acked_packet_number_.
-	LosePacket := func(number protocol.PacketNumber) {
-		sender.OnPacketLost(number, maxDatagramSize, bytesInFlight)
-		bytesInFlight -= maxDatagramSize
-	}
+	// // Does not increment acked_packet_number_.
+	// LosePacket := func(number protocol.PacketNumber) {
+	// 	sender.OnPacketLost(number, maxDatagramSize, bytesInFlight)
+	// 	bytesInFlight -= maxDatagramSize
+	// }
 
 	SendAvailableSendWindow := func() int { return SendAvailableSendWindowLen(maxDatagramSize) }
-	AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
-	LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
+	// AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
+	// LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
 
 	BeforeEach(func() {
 		bytesInFlight = 0
 		packetNumber = 1
-		ackedPacketNumber = 0
+		//ackedPacketNumber = 0
 		clock = mockClock{}
 		rttStats = utils.NewRTTStats()
-		sender = newCubicSender(
+		sender = newBbrSender(
 			&clock,
 			rttStats,
-			true, /*reno*/
 			protocol.InitialPacketSizeIPv4,
 			initialCongestionWindowPackets*maxDatagramSize,
 			maxCongestionWindow,
@@ -90,9 +89,17 @@ var _ = Describe("", func() {
 
 	})
 
-	It("", func() {
-		Expect(0).To(Equal(0))
-		Expect(true).To(BeTrue())
-		Expect(func() { panic("") }).To(Panic())
+	It("has the right values at startup", func() {
+		// At startup make sure we are at the default.
+		Expect(sender.GetCongestionWindow()).To(Equal(defaultWindowTCP))
+		// Make sure we can send.
+		Expect(sender.TimeUntilSend(0)).To(BeZero())
+		Expect(sender.CanSend(bytesInFlight)).To(BeTrue())
+		// And that window is un-affected.
+		Expect(sender.GetCongestionWindow()).To(Equal(defaultWindowTCP))
+
+		// Fill the send window with data, then verify that we can't send.
+		SendAvailableSendWindow()
+		Expect(sender.CanSend(bytesInFlight)).To(BeFalse())
 	})
 })
