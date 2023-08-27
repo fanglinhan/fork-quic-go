@@ -23,12 +23,11 @@ var _ = Describe("", func() {
 	)
 
 	var (
-		sender            *bbrSender
-		clock             mockClock
-		bytesInFlight     protocol.ByteCount
-		packetNumber      protocol.PacketNumber
-		ackedPacketNumber protocol.PacketNumber
-		rttStats          *utils.RTTStats
+		sender        *bbrSender
+		clock         mockClock
+		bytesInFlight protocol.ByteCount
+		packetNumber  protocol.PacketNumber
+		rttStats      *utils.RTTStats
 	)
 
 	SendAvailableSendWindowLen := func(packetLength protocol.ByteCount) int {
@@ -42,40 +41,52 @@ var _ = Describe("", func() {
 		return packetsSent
 	}
 
-	// Normal is that TCP acks every other segment.
-	AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-		rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
-		sender.MaybeExitSlowStart()
-		for i := 0; i < n; i++ {
-			ackedPacketNumber++
-			sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
+	AckNPacketsLen := func(packetNums []protocol.PacketNumber, packetLength protocol.ByteCount) {
+		infos := []protocol.AckedPacketInfo{}
+		for _, p := range packetNums {
+			infos = append(infos, protocol.AckedPacketInfo{
+				PacketNumber: p,
+				BytesAcked:   packetLength,
+				ReceivedTime: clock.Now(),
+			})
 		}
-		bytesInFlight -= protocol.ByteCount(n) * packetLength
-		clock.Advance(time.Millisecond)
+		sender.OnCongestionEvent(bytesInFlight, clock.Now(), infos, nil)
+		bytesInFlight -= protocol.ByteCount(len(packetNums)) * packetLength
 	}
 
-	LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-		for i := 0; i < n; i++ {
-			ackedPacketNumber++
-			sender.OnPacketLost(ackedPacketNumber, packetLength, bytesInFlight)
+	LoseNPacketsLen := func(packetNums []protocol.PacketNumber, packetLength protocol.ByteCount) {
+		infos := []protocol.LostPacketInfo{}
+		for _, p := range packetNums {
+			infos = append(infos, protocol.LostPacketInfo{
+				PacketNumber: p,
+				BytesLost:    packetLength,
+			})
 		}
-		bytesInFlight -= protocol.ByteCount(n) * packetLength
+		sender.OnCongestionEvent(bytesInFlight, clock.Now(), nil, infos)
+		bytesInFlight -= protocol.ByteCount(len(packetNums)) * packetLength
 	}
-
-	// Does not increment acked_packet_number_.
-	// LosePacket := func(number protocol.PacketNumber) {
-	// 	sender.OnPacketLost(number, maxDatagramSize, bytesInFlight)
-	// 	bytesInFlight -= maxDatagramSize
-	// }
 
 	SendAvailableSendWindow := func() int { return SendAvailableSendWindowLen(maxDatagramSize) }
-	AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
-	LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
+
+	AckSeqPackets := func(start, end int) {
+		ackPacketNums := []protocol.PacketNumber{}
+		for i := start; i <= end; i++ {
+			ackPacketNums = append(ackPacketNums, protocol.PacketNumber(i))
+		}
+		AckNPacketsLen(ackPacketNums, maxDatagramSize)
+	}
+
+	LoseSeqPackets := func(start, end int) {
+		losePacketNums := []protocol.PacketNumber{}
+		for i := start; i <= end; i++ {
+			losePacketNums = append(losePacketNums, protocol.PacketNumber(i))
+		}
+		LoseNPacketsLen(losePacketNums, maxDatagramSize)
+	}
 
 	BeforeEach(func() {
 		bytesInFlight = 0
 		packetNumber = 1
-		ackedPacketNumber = 0
 		clock = mockClock{}
 		rttStats = utils.NewRTTStats()
 		sender = newBbrSender(
@@ -108,63 +119,39 @@ var _ = Describe("", func() {
 		clock.Advance(time.Hour)
 		// Fill the send window with data, then verify that we can't send.
 		SendAvailableSendWindow()
-		AckNPackets(1)
+		AckSeqPackets(1, 1)
 		delay := sender.TimeUntilSend(bytesInFlight)
 		Expect(delay).ToNot(BeZero())
 		Expect(delay).ToNot(Equal(utils.InfDuration))
 	})
 
-	// It("application limited slow start", func() {
-	// 	// Send exactly 10 packets and ensure the CWND ends at 14 packets.
-	// 	const numberOfAcks = 5
-	// 	// At startup make sure we can send.
-	// 	Expect(sender.CanSend(0)).To(BeTrue())
-	// 	Expect(sender.TimeUntilSend(0)).To(BeZero())
+	It("send n packets and ack n packets", func() {
+		// At startup make sure we can send.
+		Expect(sender.CanSend(0)).To(BeTrue())
+		Expect(sender.TimeUntilSend(0)).To(BeZero())
 
-	// 	SendAvailableSendWindow()
-	// 	for i := 0; i < numberOfAcks; i++ {
-	// 		AckNPackets(2)
-	// 	}
-	// 	bytesToSend := sender.GetCongestionWindow()
-	// 	// It's expected 2 acks will arrive when the bytes_in_flight are greater than
-	// 	// half the CWND.
-	// 	Expect(bytesToSend).To(Equal(defaultWindowTCP + maxDatagramSize*2*2))
-	// })
+		sentPacketsCount := SendAvailableSendWindow()
+		Expect(sentPacketsCount).To(Equal(initialCongestionWindowPackets))
 
-	It("slow start packet loss", func() {
-		const numberOfAcks = 10
-		for i := 0; i < numberOfAcks; i++ {
-			// Send our full send window.
-			SendAvailableSendWindow()
-			AckNPackets(2)
-		}
-		SendAvailableSendWindow()
-		expectedSendWindow := defaultWindowTCP + (maxDatagramSize * 2 * numberOfAcks)
-		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+		clock.Advance(60 * time.Millisecond)
+		AckSeqPackets(1, sentPacketsCount)
 
-		// Lose a packet to exit slow start.
-		LoseNPackets(1)
-		packetsInRecoveryWindow := expectedSendWindow / maxDatagramSize
+		bytesToSend := sender.GetCongestionWindow()
+		Expect(bytesToSend).To(Equal(defaultWindowTCP * 2))
+	})
 
-		// We should now have fallen out of slow start with a reduced window.
-		expectedSendWindow = protocol.ByteCount(float32(expectedSendWindow) * renoBeta)
-		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+	It("send n packets and lose n packets", func() {
+		// At startup make sure we can send.
+		Expect(sender.CanSend(0)).To(BeTrue())
+		Expect(sender.TimeUntilSend(0)).To(BeZero())
 
-		// Recovery phase. We need to ack every packet in the recovery window before
-		// we exit recovery.
-		numberOfPacketsInWindow := expectedSendWindow / maxDatagramSize
-		AckNPackets(int(packetsInRecoveryWindow))
-		SendAvailableSendWindow()
-		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+		sentPacketsCount := SendAvailableSendWindow()
+		Expect(sentPacketsCount).To(Equal(initialCongestionWindowPackets))
 
-		// We need to ack an entire window before we increase CWND by 1.
-		AckNPackets(int(numberOfPacketsInWindow) - 2)
-		SendAvailableSendWindow()
-		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+		clock.Advance(60 * time.Millisecond)
+		LoseSeqPackets(1, sentPacketsCount)
 
-		// Next ack should increase cwnd by 1.
-		AckNPackets(1)
-		expectedSendWindow += maxDatagramSize
-		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+		bytesToSend := sender.GetCongestionWindow()
+		Expect(bytesToSend).To(Equal(defaultWindowTCP))
 	})
 })
