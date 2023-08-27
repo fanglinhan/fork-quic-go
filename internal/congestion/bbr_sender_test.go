@@ -126,7 +126,6 @@ var _ = Describe("", func() {
 	})
 
 	It("send n packets and ack n packets", func() {
-		// At startup make sure we can send.
 		Expect(sender.CanSend(0)).To(BeTrue())
 		Expect(sender.TimeUntilSend(0)).To(BeZero())
 
@@ -137,11 +136,10 @@ var _ = Describe("", func() {
 		AckSeqPackets(1, sentPacketsCount)
 
 		bytesToSend := sender.GetCongestionWindow()
-		Expect(bytesToSend).To(Equal(defaultWindowTCP * 2))
+		Expect(bytesToSend).To(Equal(defaultWindowTCP + protocol.ByteCount(sentPacketsCount)*maxDatagramSize))
 	})
 
 	It("send n packets and lose n packets", func() {
-		// At startup make sure we can send.
 		Expect(sender.CanSend(0)).To(BeTrue())
 		Expect(sender.TimeUntilSend(0)).To(BeZero())
 
