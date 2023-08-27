@@ -15,16 +15,6 @@ const (
 	defaultWindowTCP               = protocol.ByteCount(initialCongestionWindowPackets) * maxDatagramSize
 )
 
-type mockClock time.Time
-
-func (c *mockClock) Now() time.Time {
-	return time.Time(*c)
-}
-
-func (c *mockClock) Advance(d time.Duration) {
-	*c = mockClock(time.Time(*c).Add(d))
-}
-
 const MaxCongestionWindow protocol.ByteCount = 200 * maxDatagramSize
 
 var _ = Describe("Cubic Sender", func() {
