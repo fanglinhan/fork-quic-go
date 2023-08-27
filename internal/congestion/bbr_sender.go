@@ -88,6 +88,7 @@ type bbrSender struct {
 	rttStats *utils.RTTStats
 	clock    Clock
 	rand     utils.Rand
+	pacer    *pacer
 
 	mode bbrMode
 
@@ -290,6 +291,7 @@ func newBbrSender(
 		maxDatagramSize: initialMaxDatagramSize,
 		tracer:          tracer,
 	}
+	b.pacer = newPacer(b.bandwidthEstimate)
 
 	b.enterStartupMode(b.clock.Now())
 	b.setHighCwndGain(derivedHighCWNDGain)
@@ -299,12 +301,12 @@ func newBbrSender(
 
 // TimeUntilSend implements the SendAlgorithm interface.
 func (b *bbrSender) TimeUntilSend(bytesInFlight protocol.ByteCount) time.Time {
-	return time.Time{}
+	return b.pacer.TimeUntilSend()
 }
 
 // HasPacingBudget implements the SendAlgorithm interface.
 func (b *bbrSender) HasPacingBudget(now time.Time) bool {
-	return true
+	return b.pacer.Budget(now) >= b.maxDatagramSize
 }
 
 // OnPacketSent implements the SendAlgorithm interface.
@@ -314,6 +316,8 @@ func (b *bbrSender) OnPacketSent(
 	packetNumber protocol.PacketNumber,
 	bytes protocol.ByteCount,
 	isRetransmittable bool) {
+
+	b.pacer.SentPacket(sentTime, bytes)
 
 	b.lastSentPacket = packetNumber
 	b.bytesInFlight = bytesInFlight
@@ -361,6 +365,7 @@ func (b *bbrSender) SetMaxDatagramSize(s protocol.ByteCount) {
 	if cwndIsMinCwnd {
 		b.congestionWindow = b.minCongestionWindow
 	}
+	b.pacer.SetMaxDatagramSize(s)
 }
 
 // InSlowStart implements the SendAlgorithmWithDebugInfos interface.
