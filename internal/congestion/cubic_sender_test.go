@@ -10,14 +10,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const (
-	initialCongestionWindowPackets = 10
-	defaultWindowTCP               = protocol.ByteCount(initialCongestionWindowPackets) * maxDatagramSize
-)
-
-const MaxCongestionWindow protocol.ByteCount = 200 * maxDatagramSize
-
 var _ = Describe("Cubic Sender", func() {
+	const (
+		initialCongestionWindowPackets                    = 10
+		defaultWindowTCP                                  = protocol.ByteCount(initialCongestionWindowPackets) * maxDatagramSize
+		maxCongestionWindow            protocol.ByteCount = 200 * maxDatagramSize
+	)
+
 	var (
 		sender            *cubicSender
 		clock             mockClock
@@ -39,7 +38,7 @@ var _ = Describe("Cubic Sender", func() {
 			true, /*reno*/
 			protocol.InitialPacketSizeIPv4,
 			initialCongestionWindowPackets*maxDatagramSize,
-			MaxCongestionWindow,
+			maxCongestionWindow,
 			nil,
 		)
 	})
@@ -445,7 +444,7 @@ var _ = Describe("Cubic Sender", func() {
 		// Resets cwnd and slow start threshold on connection migrations.
 		sender.OnConnectionMigration()
 		Expect(sender.GetCongestionWindow()).To(Equal(defaultWindowTCP))
-		Expect(sender.slowStartThreshold).To(Equal(MaxCongestionWindow))
+		Expect(sender.slowStartThreshold).To(Equal(maxCongestionWindow))
 		Expect(sender.hybridSlowStart.Started()).To(BeFalse())
 	})
 
@@ -481,7 +480,7 @@ var _ = Describe("Cubic Sender", func() {
 
 	It("limit cwnd increase in congestion avoidance", func() {
 		// Enable Cubic.
-		sender = newCubicSender(&clock, rttStats, false, protocol.InitialPacketSizeIPv4, initialCongestionWindowPackets*maxDatagramSize, MaxCongestionWindow, nil)
+		sender = newCubicSender(&clock, rttStats, false, protocol.InitialPacketSizeIPv4, initialCongestionWindowPackets*maxDatagramSize, maxCongestionWindow, nil)
 		numSent := SendAvailableSendWindow()
 
 		// Make sure we fall out of slow start.
