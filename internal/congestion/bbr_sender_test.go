@@ -54,15 +54,15 @@ var _ = Describe("", func() {
 		clock.Advance(time.Millisecond)
 	}
 
-	// LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-	// 	for i := 0; i < n; i++ {
-	// 		ackedPacketNumber++
-	// 		sender.OnPacketLost(ackedPacketNumber, packetLength, bytesInFlight)
-	// 	}
-	// 	bytesInFlight -= protocol.ByteCount(n) * packetLength
-	// }
+	LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
+		for i := 0; i < n; i++ {
+			ackedPacketNumber++
+			sender.OnPacketLost(ackedPacketNumber, packetLength, bytesInFlight)
+		}
+		bytesInFlight -= protocol.ByteCount(n) * packetLength
+	}
 
-	// // Does not increment acked_packet_number_.
+	// Does not increment acked_packet_number_.
 	// LosePacket := func(number protocol.PacketNumber) {
 	// 	sender.OnPacketLost(number, maxDatagramSize, bytesInFlight)
 	// 	bytesInFlight -= maxDatagramSize
@@ -70,7 +70,7 @@ var _ = Describe("", func() {
 
 	SendAvailableSendWindow := func() int { return SendAvailableSendWindowLen(maxDatagramSize) }
 	AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
-	// LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
+	LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
 
 	BeforeEach(func() {
 		bytesInFlight = 0
@@ -112,5 +112,59 @@ var _ = Describe("", func() {
 		delay := sender.TimeUntilSend(bytesInFlight)
 		Expect(delay).ToNot(BeZero())
 		Expect(delay).ToNot(Equal(utils.InfDuration))
+	})
+
+	// It("application limited slow start", func() {
+	// 	// Send exactly 10 packets and ensure the CWND ends at 14 packets.
+	// 	const numberOfAcks = 5
+	// 	// At startup make sure we can send.
+	// 	Expect(sender.CanSend(0)).To(BeTrue())
+	// 	Expect(sender.TimeUntilSend(0)).To(BeZero())
+
+	// 	SendAvailableSendWindow()
+	// 	for i := 0; i < numberOfAcks; i++ {
+	// 		AckNPackets(2)
+	// 	}
+	// 	bytesToSend := sender.GetCongestionWindow()
+	// 	// It's expected 2 acks will arrive when the bytes_in_flight are greater than
+	// 	// half the CWND.
+	// 	Expect(bytesToSend).To(Equal(defaultWindowTCP + maxDatagramSize*2*2))
+	// })
+
+	It("slow start packet loss", func() {
+		const numberOfAcks = 10
+		for i := 0; i < numberOfAcks; i++ {
+			// Send our full send window.
+			SendAvailableSendWindow()
+			AckNPackets(2)
+		}
+		SendAvailableSendWindow()
+		expectedSendWindow := defaultWindowTCP + (maxDatagramSize * 2 * numberOfAcks)
+		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+
+		// Lose a packet to exit slow start.
+		LoseNPackets(1)
+		packetsInRecoveryWindow := expectedSendWindow / maxDatagramSize
+
+		// We should now have fallen out of slow start with a reduced window.
+		expectedSendWindow = protocol.ByteCount(float32(expectedSendWindow) * renoBeta)
+		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+
+		// Recovery phase. We need to ack every packet in the recovery window before
+		// we exit recovery.
+		numberOfPacketsInWindow := expectedSendWindow / maxDatagramSize
+		AckNPackets(int(packetsInRecoveryWindow))
+		SendAvailableSendWindow()
+		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+
+		// We need to ack an entire window before we increase CWND by 1.
+		AckNPackets(int(numberOfPacketsInWindow) - 2)
+		SendAvailableSendWindow()
+		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
+
+		// Next ack should increase cwnd by 1.
+		AckNPackets(1)
+		expectedSendWindow += maxDatagramSize
+		Expect(sender.GetCongestionWindow()).To(Equal(expectedSendWindow))
 	})
 })

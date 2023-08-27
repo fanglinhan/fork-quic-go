@@ -291,7 +291,9 @@ func newBbrSender(
 		maxDatagramSize: initialMaxDatagramSize,
 		tracer:          tracer,
 	}
-	b.pacer = newPacer(b.bandwidthEstimate)
+	b.pacer = newPacer(func() Bandwidth {
+		return b.pacingRate
+	})
 
 	b.enterStartupMode(b.clock.Now())
 	b.setHighCwndGain(derivedHighCWNDGain)
