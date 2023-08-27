@@ -291,7 +291,7 @@ func newBbrSender(
 		tracer:          tracer,
 	}
 
-	b.enterStartupMode(time.Now())
+	b.enterStartupMode(b.clock.Now())
 	b.setHighCwndGain(derivedHighCWNDGain)
 
 	return b
@@ -591,7 +591,7 @@ func (b *bbrSender) updateRoundTripCounter(lastAckedPacket protocol.PacketNumber
 // Updates the current gain used in PROBE_BW mode.
 func (b *bbrSender) updateGainCyclePhase(now time.Time, priorInFlight protocol.ByteCount, hasLosses bool) {
 	// In most cases, the cycle is advanced after an RTT passes.
-	shouldAdvanceGainCycling := time.Now().After(b.lastCycleStart.Add(b.getMinRtt()))
+	shouldAdvanceGainCycling := now.After(b.lastCycleStart.Add(b.getMinRtt()))
 	// If the pacing gain is above 1.0, the connection is trying to probe the
 	// bandwidth by increasing the number of bytes in flight to at least
 	// pacing_gain * BDP.  Make sure that it actually reaches the target, as long
