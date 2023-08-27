@@ -23,12 +23,12 @@ var _ = Describe("", func() {
 	)
 
 	var (
-		sender        *bbrSender
-		clock         mockClock
-		bytesInFlight protocol.ByteCount
-		packetNumber  protocol.PacketNumber
-		//ackedPacketNumber protocol.PacketNumber
-		rttStats *utils.RTTStats
+		sender            *bbrSender
+		clock             mockClock
+		bytesInFlight     protocol.ByteCount
+		packetNumber      protocol.PacketNumber
+		ackedPacketNumber protocol.PacketNumber
+		rttStats          *utils.RTTStats
 	)
 
 	SendAvailableSendWindowLen := func(packetLength protocol.ByteCount) int {
@@ -42,17 +42,17 @@ var _ = Describe("", func() {
 		return packetsSent
 	}
 
-	// // Normal is that TCP acks every other segment.
-	// AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
-	// 	rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
-	// 	sender.MaybeExitSlowStart()
-	// 	for i := 0; i < n; i++ {
-	// 		ackedPacketNumber++
-	// 		sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
-	// 	}
-	// 	bytesInFlight -= protocol.ByteCount(n) * packetLength
-	// 	clock.Advance(time.Millisecond)
-	// }
+	// Normal is that TCP acks every other segment.
+	AckNPacketsLen := func(n int, packetLength protocol.ByteCount) {
+		rttStats.UpdateRTT(60*time.Millisecond, 0, clock.Now())
+		sender.MaybeExitSlowStart()
+		for i := 0; i < n; i++ {
+			ackedPacketNumber++
+			sender.OnPacketAcked(ackedPacketNumber, packetLength, bytesInFlight, clock.Now())
+		}
+		bytesInFlight -= protocol.ByteCount(n) * packetLength
+		clock.Advance(time.Millisecond)
+	}
 
 	// LoseNPacketsLen := func(n int, packetLength protocol.ByteCount) {
 	// 	for i := 0; i < n; i++ {
@@ -69,13 +69,13 @@ var _ = Describe("", func() {
 	// }
 
 	SendAvailableSendWindow := func() int { return SendAvailableSendWindowLen(maxDatagramSize) }
-	// AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
+	AckNPackets := func(n int) { AckNPacketsLen(n, maxDatagramSize) }
 	// LoseNPackets := func(n int) { LoseNPacketsLen(n, maxDatagramSize) }
 
 	BeforeEach(func() {
 		bytesInFlight = 0
 		packetNumber = 1
-		//ackedPacketNumber = 0
+		ackedPacketNumber = 0
 		clock = mockClock{}
 		rttStats = utils.NewRTTStats()
 		sender = newBbrSender(
@@ -101,5 +101,16 @@ var _ = Describe("", func() {
 		// Fill the send window with data, then verify that we can't send.
 		SendAvailableSendWindow()
 		Expect(sender.CanSend(bytesInFlight)).To(BeFalse())
+	})
+
+	It("paces", func() {
+		rttStats.UpdateRTT(10*time.Millisecond, 0, time.Now())
+		clock.Advance(time.Hour)
+		// Fill the send window with data, then verify that we can't send.
+		SendAvailableSendWindow()
+		AckNPackets(1)
+		delay := sender.TimeUntilSend(bytesInFlight)
+		Expect(delay).ToNot(BeZero())
+		Expect(delay).ToNot(Equal(utils.InfDuration))
 	})
 })
