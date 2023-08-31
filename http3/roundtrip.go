@@ -84,6 +84,9 @@ type RoundTripper struct {
 	// Zero means to use a default limit.
 	MaxResponseHeaderBytes int64
 
+	// LocalAddr specifies a source address when dial.
+	LocalAddr *net.UDPAddr
+
 	newClient func(hostname string, tlsConf *tls.Config, opts *roundTripperOpts, conf *quic.Config, dialer dialFunc) (roundTripCloser, error) // so we can mock it in tests
 	clients   map[string]*roundTripCloserWithCount
 	transport *quic.Transport
@@ -185,7 +188,7 @@ func (r *RoundTripper) getClient(hostname string, onlyCached bool) (rtc *roundTr
 		dial := r.Dial
 		if dial == nil {
 			if r.transport == nil {
-				udpConn, err := net.ListenUDP("udp", nil)
+				udpConn, err := net.ListenUDP("udp", r.LocalAddr)
 				if err != nil {
 					return nil, false, err
 				}
