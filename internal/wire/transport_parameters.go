@@ -47,6 +47,8 @@ const (
 	retrySourceConnectionIDParameterID         transportParameterID = 0x10
 	// RFC 9221
 	maxDatagramFrameSizeParameterID transportParameterID = 0x20
+	// Extensions
+	disable1RTTEncryptionParameterID transportParameterID = 0xbaad
 )
 
 // PreferredAddress is the value encoding in the preferred_address transport parameter
@@ -88,6 +90,8 @@ type TransportParameters struct {
 	ActiveConnectionIDLimit uint64
 
 	MaxDatagramFrameSize protocol.ByteCount
+
+	Disable1RTTEncryption bool
 }
 
 // Unmarshal the transport parameters
@@ -184,6 +188,11 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 			}
 			connID, _ := protocol.ReadConnectionID(r, int(paramLen))
 			p.RetrySourceConnectionID = &connID
+		case disable1RTTEncryptionParameterID:
+			if paramLen != 0 {
+				return fmt.Errorf("wrong length for disable_1rtt_encryption: %d (expected empty)", paramLen)
+			}
+			p.Disable1RTTEncryption = true
 		default:
 			r.Seek(int64(paramLen), io.SeekCurrent)
 		}
@@ -367,6 +376,11 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	// disable_active_migration
 	if p.DisableActiveMigration {
 		b = quicvarint.Append(b, uint64(disableActiveMigrationParameterID))
+		b = quicvarint.Append(b, 0)
+	}
+	// disable_1rtt_encryption
+	if p.Disable1RTTEncryption {
+		b = quicvarint.Append(b, uint64(disable1RTTEncryptionParameterID))
 		b = quicvarint.Append(b, 0)
 	}
 	if pers == protocol.PerspectiveServer {

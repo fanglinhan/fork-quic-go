@@ -315,6 +315,42 @@ func (c *PackerPackMTUProbePacketCall) DoAndReturn(f func(ackhandler.Frame, prot
 	return c
 }
 
+// SetClearText1RTT mocks base method.
+func (m *MockPacker) SetClearText1RTT(arg0 bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetClearText1RTT", arg0)
+}
+
+// SetClearText1RTT indicates an expected call of SetClearText1RTT.
+func (mr *MockPackerMockRecorder) SetClearText1RTT(arg0 any) *PackerSetClearText1RTTCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClearText1RTT", reflect.TypeOf((*MockPacker)(nil).SetClearText1RTT), arg0)
+	return &PackerSetClearText1RTTCall{Call: call}
+}
+
+// PackerSetClearText1RTTCall wrap *gomock.Call
+type PackerSetClearText1RTTCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *PackerSetClearText1RTTCall) Return() *PackerSetClearText1RTTCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *PackerSetClearText1RTTCall) Do(f func(bool)) *PackerSetClearText1RTTCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *PackerSetClearText1RTTCall) DoAndReturn(f func(bool)) *PackerSetClearText1RTTCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // SetToken mocks base method.
 func (m *MockPacker) SetToken(arg0 []byte) {
 	m.ctrl.T.Helper()

@@ -8,6 +8,7 @@ import (
 	"github.com/quic-go/quic-go/internal/handshake"
 	"github.com/quic-go/quic-go/internal/protocol"
 	"github.com/quic-go/quic-go/internal/qerr"
+	"github.com/quic-go/quic-go/internal/utils"
 	"github.com/quic-go/quic-go/internal/wire"
 )
 
@@ -38,6 +39,9 @@ type packetUnpacker struct {
 	cs handshake.CryptoSetup
 
 	shortHdrConnIDLen int
+
+	highestRcvdPN protocol.PacketNumber // only used for clear text 1-RTT packet.
+	clearText1RTT bool
 }
 
 var _ unpacker = &packetUnpacker{}
@@ -47,6 +51,10 @@ func newPacketUnpacker(cs handshake.CryptoSetup, shortHdrConnIDLen int) *packetU
 		cs:                cs,
 		shortHdrConnIDLen: shortHdrConnIDLen,
 	}
+}
+
+func (u *packetUnpacker) SetClearText1RTT(c bool) {
+	u.clearText1RTT = c
 }
 
 // UnpackLongHeader unpacks a Long Header packet.
@@ -108,13 +116,27 @@ func (u *packetUnpacker) UnpackLongHeader(hdr *wire.Header, rcvTime time.Time, d
 }
 
 func (u *packetUnpacker) UnpackShortHeader(rcvTime time.Time, data []byte) (protocol.PacketNumber, protocol.PacketNumberLen, protocol.KeyPhaseBit, []byte, error) {
-	opener, err := u.cs.Get1RTTOpener()
-	if err != nil {
-		return 0, 0, 0, nil, err
-	}
-	pn, pnLen, kp, decrypted, err := u.unpackShortHeaderPacket(opener, rcvTime, data)
-	if err != nil {
-		return 0, 0, 0, nil, err
+	var (
+		pn        protocol.PacketNumber
+		pnLen     protocol.PacketNumberLen
+		kp        protocol.KeyPhaseBit
+		decrypted []byte
+		err       error
+	)
+	if u.clearText1RTT {
+		pn, pnLen, kp, decrypted, err = u.unpackShortHeaderPacketWithClearText(data)
+		if err != nil {
+			return 0, 0, 0, nil, err
+		}
+	} else {
+		opener, err := u.cs.Get1RTTOpener()
+		if err != nil {
+			return 0, 0, 0, nil, err
+		}
+		pn, pnLen, kp, decrypted, err = u.unpackShortHeaderPacket(opener, rcvTime, data)
+		if err != nil {
+			return 0, 0, 0, nil, err
+		}
 	}
 	if len(decrypted) == 0 {
 		return 0, 0, 0, nil, &qerr.TransportError{
@@ -143,6 +165,16 @@ func (u *packetUnpacker) unpackLongHeaderPacket(opener handshake.LongHeaderOpene
 		return nil, nil, parseErr
 	}
 	return extHdr, decrypted, nil
+}
+
+func (u *packetUnpacker) unpackShortHeaderPacketWithClearText(data []byte) (protocol.PacketNumber, protocol.PacketNumberLen, protocol.KeyPhaseBit, []byte, error) {
+	l, pn, pnLen, kp, parseErr := wire.ParseShortHeader(data, u.shortHdrConnIDLen)
+	if parseErr != nil && parseErr != wire.ErrInvalidReservedBits {
+		return 0, 0, 0, nil, parseErr
+	}
+	pn = protocol.DecodePacketNumber(pnLen, u.highestRcvdPN, pn)
+	u.highestRcvdPN = utils.Max(u.highestRcvdPN, pn)
+	return pn, pnLen, kp, data[l:], nil
 }
 
 func (u *packetUnpacker) unpackShortHeaderPacket(opener handshake.ShortHeaderOpener, rcvTime time.Time, data []byte) (protocol.PacketNumber, protocol.PacketNumberLen, protocol.KeyPhaseBit, []byte, error) {

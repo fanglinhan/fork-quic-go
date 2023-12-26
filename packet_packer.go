@@ -27,6 +27,7 @@ type packer interface {
 	PackMTUProbePacket(ping ackhandler.Frame, size protocol.ByteCount, v protocol.VersionNumber) (shortHeaderPacket, *packetBuffer, error)
 
 	SetToken([]byte)
+	SetClearText1RTT(c bool)
 }
 
 type sealer interface {
@@ -134,6 +135,9 @@ type packetPacker struct {
 	rand                rand.Rand
 
 	numNonAckElicitingAcks int
+
+	clearText1RTT  bool
+	shim1RTTSealer handshake.ShortHeaderSealer // only used for clear text 1-RTT
 }
 
 var _ packer = &packetPacker{}
@@ -166,7 +170,13 @@ func newPacketPacker(
 		acks:                acks,
 		rand:                *rand.New(rand.NewSource(binary.BigEndian.Uint64(b[:]))),
 		pnManager:           packetNumberManager,
+		shim1RTTSealer:      &shim1RTTSealer{},
 	}
+}
+
+// SetClearText1RTT
+func (p *packetPacker) SetClearText1RTT(c bool) {
+	p.clearText1RTT = c
 }
 
 // PackConnectionClose packs a packet that closes the connection with a transport error.
@@ -234,9 +244,14 @@ func (p *packetPacker) packConnectionClose(
 			sealer, err = p.cryptoSetup.Get0RTTSealer()
 		case protocol.Encryption1RTT:
 			var s handshake.ShortHeaderSealer
-			s, err = p.cryptoSetup.Get1RTTSealer()
-			if err == nil {
+			if p.clearText1RTT {
+				s = p.shim1RTTSealer
 				keyPhase = s.KeyPhase()
+			} else {
+				s, err = p.cryptoSetup.Get1RTTSealer()
+				if err == nil {
+					keyPhase = s.KeyPhase()
+				}
 			}
 			sealer = s
 		}
@@ -372,9 +387,13 @@ func (p *packetPacker) PackCoalescedPacket(onlyAck bool, maxPacketSize protocol.
 	var kp protocol.KeyPhaseBit
 	if (onlyAck && size == 0) || (!onlyAck && size < maxPacketSize-protocol.MinCoalescedPacketSize) {
 		var err error
-		oneRTTSealer, err = p.cryptoSetup.Get1RTTSealer()
-		if err != nil && err != handshake.ErrKeysDropped && err != handshake.ErrKeysNotYetAvailable {
-			return nil, err
+		if p.clearText1RTT {
+			oneRTTSealer = p.shim1RTTSealer
+		} else {
+			oneRTTSealer, err = p.cryptoSetup.Get1RTTSealer()
+			if err != nil && err != handshake.ErrKeysDropped && err != handshake.ErrKeysNotYetAvailable {
+				return nil, err
+			}
 		}
 		if err == nil { // 1-RTT
 			kp = oneRTTSealer.KeyPhase()
@@ -455,9 +474,15 @@ func (p *packetPacker) AppendPacket(buf *packetBuffer, maxPacketSize protocol.By
 }
 
 func (p *packetPacker) appendPacket(buf *packetBuffer, onlyAck bool, maxPacketSize protocol.ByteCount, v protocol.VersionNumber) (shortHeaderPacket, error) {
-	sealer, err := p.cryptoSetup.Get1RTTSealer()
-	if err != nil {
-		return shortHeaderPacket{}, err
+	var sealer handshake.ShortHeaderSealer
+	var err error
+	if p.clearText1RTT {
+		sealer = p.shim1RTTSealer
+	} else {
+		sealer, err = p.cryptoSetup.Get1RTTSealer()
+		if err != nil {
+			return shortHeaderPacket{}, err
+		}
 	}
 	pn, pnLen := p.pnManager.PeekPacketNumber(protocol.Encryption1RTT)
 	connID := p.getDestConnID()
@@ -657,9 +682,15 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 
 func (p *packetPacker) MaybePackProbePacket(encLevel protocol.EncryptionLevel, maxPacketSize protocol.ByteCount, v protocol.VersionNumber) (*coalescedPacket, error) {
 	if encLevel == protocol.Encryption1RTT {
-		s, err := p.cryptoSetup.Get1RTTSealer()
-		if err != nil {
-			return nil, err
+		var s handshake.ShortHeaderSealer
+		var err error
+		if p.clearText1RTT {
+			s = p.shim1RTTSealer
+		} else {
+			s, err = p.cryptoSetup.Get1RTTSealer()
+			if err != nil {
+				return nil, err
+			}
 		}
 		kp := s.KeyPhase()
 		connID := p.getDestConnID()
@@ -727,9 +758,15 @@ func (p *packetPacker) PackMTUProbePacket(ping ackhandler.Frame, size protocol.B
 		length: ping.Frame.Length(v),
 	}
 	buffer := getPacketBuffer()
-	s, err := p.cryptoSetup.Get1RTTSealer()
-	if err != nil {
-		return shortHeaderPacket{}, nil, err
+	var s handshake.ShortHeaderSealer
+	var err error
+	if p.clearText1RTT {
+		s = p.shim1RTTSealer
+	} else {
+		s, err = p.cryptoSetup.Get1RTTSealer()
+		if err != nil {
+			return shortHeaderPacket{}, nil, err
+		}
 	}
 	connID := p.getDestConnID()
 	pn, pnLen := p.pnManager.PeekPacketNumber(protocol.Encryption1RTT)
@@ -833,7 +870,9 @@ func (p *packetPacker) appendShortHeaderPacket(
 			return shortHeaderPacket{}, fmt.Errorf("PacketPacker BUG: packet too large (%d bytes, allowed %d bytes)", size, maxPacketSize)
 		}
 	}
-	raw = p.encryptPacket(raw, sealer, pn, payloadOffset, protocol.ByteCount(pnLen))
+	if !p.clearText1RTT {
+		raw = p.encryptPacket(raw, sealer, pn, payloadOffset, protocol.ByteCount(pnLen))
+	}
 	buffer.Data = buffer.Data[:len(buffer.Data)+len(raw)]
 
 	if newPN := p.pnManager.PopPacketNumber(protocol.Encryption1RTT); newPN != pn {
@@ -904,3 +943,17 @@ func (p *packetPacker) encryptPacket(raw []byte, sealer sealer, pn protocol.Pack
 func (p *packetPacker) SetToken(token []byte) {
 	p.token = token
 }
+
+var _ handshake.ShortHeaderSealer = &shim1RTTSealer{}
+
+type shim1RTTSealer struct{}
+
+func (s *shim1RTTSealer) Seal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte {
+	return dst
+}
+
+func (s *shim1RTTSealer) EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {}
+
+func (s *shim1RTTSealer) Overhead() int { return 0 }
+
+func (s *shim1RTTSealer) KeyPhase() protocol.KeyPhaseBit { return protocol.KeyPhaseBit(0) }

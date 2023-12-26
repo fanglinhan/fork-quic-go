@@ -40,6 +40,42 @@ func (m *MockUnpacker) EXPECT() *MockUnpackerMockRecorder {
 	return m.recorder
 }
 
+// SetClearText1RTT mocks base method.
+func (m *MockUnpacker) SetClearText1RTT(arg0 bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetClearText1RTT", arg0)
+}
+
+// SetClearText1RTT indicates an expected call of SetClearText1RTT.
+func (mr *MockUnpackerMockRecorder) SetClearText1RTT(arg0 any) *UnpackerSetClearText1RTTCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClearText1RTT", reflect.TypeOf((*MockUnpacker)(nil).SetClearText1RTT), arg0)
+	return &UnpackerSetClearText1RTTCall{Call: call}
+}
+
+// UnpackerSetClearText1RTTCall wrap *gomock.Call
+type UnpackerSetClearText1RTTCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *UnpackerSetClearText1RTTCall) Return() *UnpackerSetClearText1RTTCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *UnpackerSetClearText1RTTCall) Do(f func(bool)) *UnpackerSetClearText1RTTCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *UnpackerSetClearText1RTTCall) DoAndReturn(f func(bool)) *UnpackerSetClearText1RTTCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // UnpackLongHeader mocks base method.
 func (m *MockUnpacker) UnpackLongHeader(arg0 *wire.Header, arg1 time.Time, arg2 []byte, arg3 protocol.VersionNumber) (*unpackedPacket, error) {
 	m.ctrl.T.Helper()

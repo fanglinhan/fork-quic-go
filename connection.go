@@ -27,6 +27,8 @@ import (
 type unpacker interface {
 	UnpackLongHeader(hdr *wire.Header, rcvTime time.Time, data []byte, v protocol.VersionNumber) (*unpackedPacket, error)
 	UnpackShortHeader(rcvTime time.Time, data []byte) (protocol.PacketNumber, protocol.PacketNumberLen, protocol.KeyPhaseBit, []byte, error)
+
+	SetClearText1RTT(c bool)
 }
 
 type streamGetter interface {
@@ -210,6 +212,8 @@ type connection struct {
 	logID  string
 	tracer *logging.ConnectionTracer
 	logger utils.Logger
+
+	clearText1RTT bool
 }
 
 var (
@@ -305,6 +309,7 @@ var newConnection = func(
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
 		RetrySourceConnectionID:   retrySrcConnID,
+		Disable1RTTEncryption:     s.config.Disable1RTTEncryption,
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -412,6 +417,7 @@ var newClientConnection = func(
 		// See https://github.com/quic-go/quic-go/pull/3806.
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
+		Disable1RTTEncryption:     s.config.Disable1RTTEncryption,
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -676,6 +682,7 @@ func (s *connection) ConnectionState() ConnectionState {
 	s.connState.TLS = cs.ConnectionState
 	s.connState.Used0RTT = cs.Used0RTT
 	s.connState.GSO = s.conn.capabilities().GSO
+	s.connState.Disable1RTTEncryption = s.clearText1RTT
 	return s.connState
 }
 
@@ -1764,6 +1771,19 @@ func (s *connection) applyTransportParameters() {
 	if params.PreferredAddress != nil {
 		// Retire the connection ID.
 		s.connIDManager.AddFromPreferredAddress(params.PreferredAddress.ConnectionID, params.PreferredAddress.StatelessResetToken)
+	}
+	if s.config.Disable1RTTEncryption && params.Disable1RTTEncryption {
+		s.setClearText1RTT(true)
+	}
+}
+
+func (s *connection) setClearText1RTT(c bool) {
+	s.clearText1RTT = c
+	if s.packer != nil {
+		s.packer.SetClearText1RTT(c)
+	}
+	if s.unpacker != nil {
+		s.unpacker.SetClearText1RTT(c)
 	}
 }
 
