@@ -4,9 +4,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/quic-go/quic-go/internal/protocol"
-	"github.com/quic-go/quic-go/internal/utils"
-	"github.com/quic-go/quic-go/internal/utils/ringbuffer"
+	"github.com/fanglinhan/fork-quic-go/internal/protocol"
+	"github.com/fanglinhan/fork-quic-go/internal/utils"
+	"github.com/fanglinhan/fork-quic-go/internal/utils/ringbuffer"
 )
 
 const (

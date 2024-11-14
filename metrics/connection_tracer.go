@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/internal/qerr"
-	"github.com/quic-go/quic-go/logging"
+	quic "github.com/fanglinhan/fork-quic-go"
+	"github.com/fanglinhan/fork-quic-go/internal/qerr"
+	"github.com/fanglinhan/fork-quic-go/logging"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

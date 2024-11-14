@@ -1,9 +1,9 @@
 package congestion
 
 import (
+	"github.com/fanglinhan/fork-quic-go/internal/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 var _ = Describe("PacketNumber indexed queue", func() {

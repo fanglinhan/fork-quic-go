@@ -7,9 +7,8 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/quic-go/quic-go/integrationtests/tools"
-	"github.com/quic-go/quic-go/logging"
-
+	"github.com/fanglinhan/fork-quic-go/integrationtests/tools"
+	"github.com/fanglinhan/fork-quic-go/logging"
 	"github.com/quic-go/quic-go"
 
 	. "github.com/onsi/ginkgo/v2"

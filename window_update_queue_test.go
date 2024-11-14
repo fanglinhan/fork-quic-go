@@ -1,9 +1,9 @@
 package quic
 
 import (
-	"github.com/quic-go/quic-go/internal/mocks"
-	"github.com/quic-go/quic-go/internal/protocol"
-	"github.com/quic-go/quic-go/internal/wire"
+	"github.com/fanglinhan/fork-quic-go/internal/mocks"
+	"github.com/fanglinhan/fork-quic-go/internal/protocol"
+	"github.com/fanglinhan/fork-quic-go/internal/wire"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

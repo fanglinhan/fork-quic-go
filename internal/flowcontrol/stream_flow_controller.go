@@ -3,9 +3,9 @@ package flowcontrol
 import (
 	"fmt"
 
-	"github.com/quic-go/quic-go/internal/protocol"
-	"github.com/quic-go/quic-go/internal/qerr"
-	"github.com/quic-go/quic-go/internal/utils"
+	"github.com/fanglinhan/fork-quic-go/internal/protocol"
+	"github.com/fanglinhan/fork-quic-go/internal/qerr"
+	"github.com/fanglinhan/fork-quic-go/internal/utils"
 )
 
 type streamFlowController struct {

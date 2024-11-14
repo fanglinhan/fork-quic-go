@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/fanglinhan/fork-quic-go/internal/testdata"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/internal/testdata"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
